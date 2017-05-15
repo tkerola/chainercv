@@ -24,8 +24,6 @@ class FasterRCNNLoss(chainer.Chain):
         # These parameters need to be consistent across modules
         proposal_target_creator_params.update({
             'n_class': self.n_class,
-            'bbox_normalize_target_precomputed':
-            self.faster_rcnn.target_precomputed,
             'bbox_normalize_mean': self.faster_rcnn.bbox_normalize_mean,
             'bbox_normalize_std': self.faster_rcnn.bbox_normalize_std,
         })
@@ -46,7 +44,7 @@ class FasterRCNNLoss(chainer.Chain):
         layers = ['feature', 'rpn_bbox_pred', 'rpn_cls_score',
                   'roi', 'anchor']
         out = self.faster_rcnn(
-            img, scale=scale, layers=layers, rpn_only=True,
+            img, scale=scale, layers=layers,
             test=not self.train)
 
         # RPN losses
@@ -70,9 +68,7 @@ class FasterRCNNLoss(chainer.Chain):
         pool5 = F.roi_pooling_2d(
             out['feature'],
             roi_sample, self.roi_size, self.roi_size, self.spatial_scale)
-        out = self.faster_rcnn.head(pool5, train=self.train)
-        bbox_tf = out['bbox_tf']
-        score = out['score']
+        bbox_tf, score = self.faster_rcnn.head(pool5, train=self.train)
 
         # Losses for outputs of the head.
         loss_cls = F.softmax_cross_entropy(score, label_sample)
