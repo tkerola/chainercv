@@ -56,11 +56,11 @@ class ProposalCreator(object):
         self.test_rpn_post_nms_top_n = test_rpn_post_nms_top_n
         self.rpn_min_size = rpn_min_size
 
-    def __call__(self, rpn_bbox_pred, rpn_cls_prob,
+    def __call__(self, rpn_bbox_preds, rpn_cls_probs,
                  anchor, img_size, scale=1., train=False):
         """Generate deterministic proposal regions.
 
-        The shapes of :obj:`rpn_bbox_pred` and :obj:`rpn_cls_prob` depend on
+        The shapes of :obj:`rpn_bbox_preds` and :obj:`rpn_cls_probs` depend on
         the anchors which the Region Proposal Networks is using.
 
         Here are notations used
@@ -68,16 +68,19 @@ class ProposalCreator(object):
         * :math:`A` is number of anchors created for each pixel.
         * :math:`H` and :math:`W` are height and width of the input features.
 
-        Also, the values contained in :obj:`rpn_bbox_pred` is encoded using
-        :func:`chainercv.links.faster_rcnn.utils.bbox_regression_target`
+        Also, the values contained in :obj:`rpn_bbox_preds` is encoded using
+        :func:`chainercv.links.model.faster_rcnn.utils.bbox_regression_target`\
+        .
+
+        Type of the output is same as the inputs.
 
         .. seealso::
-            :func:`~chainercv.links.faster_rcnn.utils.bbox_regression_target`
+            :func:`~chainercv.links.model.faster_rcnn.utils.bbox_regression_target`
 
         Args:
-            rpn_bbox_pred (array): Predicted regression targets for anchors.
+            rpn_bboxes (array): Predicted regression targets for anchors.
                 Its shape is :math:`(1, 4 A, H, W)`.
-            rpn_cls_prob (array): Predicted foreground probability for anchors.
+            rpn_probs (array): Predicted foreground probability for anchors.
                 Its shape is :math:`(1, 2 A, H, W)`.
             anchor (array): Coordinates of anchors. Its shape is
                 :math:`(R, 4)`. The second axis contains x and y coordinates
@@ -89,23 +92,37 @@ class ProposalCreator(object):
             train (bool): If this is in train mode or not.
                 Default value is :obj:`False`.
 
+        Returns:
+            (array, array):
+            A tuple of a bounding box array containing coordinates of \
+            proposal boxes and an array containing indices of images to which \
+            bounding boxes correspond to. \
+            The bounding box array is a concatenation of bounding box arrays \
+            from multiple images in the batch. \
+            Its shape is :math:`(R', 4)`. Given :math:`R_i` predicted \
+            bounding boxes for the :math:`i` th image and size of batch \
+            :math:`N`, :math:`R' = \\sum _{i=1} ^ N R_i`. \
+            Each bouding box is organized by \
+            :obj:`(x_min, y_min, x_max, y_max)` in the second axis. \
+            The image index array has shape :math:`(R',)`.
+
         """
         pre_nms_topN = self.train_rpn_pre_nms_top_n \
             if train else self.test_rpn_pre_nms_top_n
         post_nms_topN = self.train_rpn_post_nms_top_n \
             if train else self.test_rpn_post_nms_top_n
 
-        xp = cuda.get_array_module(rpn_cls_prob)
-        bbox_deltas = cuda.to_cpu(rpn_bbox_pred.data)
-        rpn_cls_prob = cuda.to_cpu(rpn_cls_prob.data)
+        xp = cuda.get_array_module(rpn_cls_probs)
+        bbox_deltas = cuda.to_cpu(rpn_bbox_preds.data)
+        rpn_cls_probs = cuda.to_cpu(rpn_cls_probs.data)
         anchor = cuda.to_cpu(anchor)
-        if not (bbox_deltas.shape[0] == rpn_cls_prob.shape[0] == 1):
+        if not (bbox_deltas.shape[0] == rpn_cls_probs.shape[0] == 1):
             raise ValueError('Only batchsize 1 is supported')
 
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs, which we want
-        n_anchor = rpn_cls_prob.shape[1] // 2
-        score = rpn_cls_prob[:, n_anchor:, :, :]
+        n_anchor = rpn_cls_probs.shape[1] // 2
+        score = rpn_cls_probs[:, n_anchor:, :, :]
 
         # Transpose and reshape predicted bbox transformations and score
         # to get them into the same order as the anchors:
@@ -156,13 +173,8 @@ class ProposalCreator(object):
             keep = keep[:post_nms_topN]
         proposal = proposal[keep]
 
-        # Output rois blob
-        # Our RPN implementation only supports a single input image, so all
-        # batch inds are 0
-        batch_ind = np.zeros((proposal.shape[0], 1), dtype=np.float32)
-        roi = np.hstack((batch_ind, proposal)).astype(np.float32, copy=False)
-
+        rois = proposal
         if xp != np:
-            roi = cuda.to_gpu(roi)
-
-        return roi
+            rois = cuda.to_gpu(rois)
+        batch_indices = xp.zeros((len(rois),), dtype=np.int32)
+        return rois, batch_indices

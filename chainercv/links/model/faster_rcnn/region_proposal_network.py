@@ -15,13 +15,17 @@ class RegionProposalNetwork(chainer.Chain):
 
     """Region Proposal Networks introduced in Faster RCNN.
 
-    This is Region Proposal Networks introduced in Faster RCNN.
-    This takes features extracted from an image and predict
+    This is Region Proposal Networks introduced in Faster RCNN [1].
+    This takes features extracted from an image and predicts
     class agnostic bounding boxes around "objects".
 
+    .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
+    Faster R-CNN: Towards Real-Time Object Detection with \
+    Region Proposal Networks. NIPS 2015.
+
     Args:
-        n_in (int): Channel size of input.
-        n_mid (int): Channel size of the intermediate tensor.
+        in_channels (int): Channel size of input.
+        mid_channels (int): Channel size of the intermediate tensor.
         ratios (list of floats): Anchors with ratios contained in this list
             will be generated. Ratio is the ratio of the height by the width.
         anchor_scales (list of numbers): Values in :obj:`scales` determine area
@@ -39,7 +43,7 @@ class RegionProposalNetwork(chainer.Chain):
     """
 
     def __init__(
-            self, n_in=512, n_mid=512, ratios=[0.5, 1, 2],
+            self, in_channels=512, mid_channels=512, ratios=[0.5, 1, 2],
             anchor_scales=[8, 16, 32], feat_stride=16,
             proposal_creator_params={},
     ):
@@ -52,15 +56,17 @@ class RegionProposalNetwork(chainer.Chain):
         initializer = chainer.initializers.Normal(scale=0.01)
         super(RegionProposalNetwork, self).__init__(
             rpn_conv_3x3=L.Convolution2D(
-                n_in, n_mid, 3, 1, 1, initialW=initializer),
-            rpn_cls_score=L.Convolution2D(
-                n_mid, 2 * n_anchor, 1, 1, 0, initialW=initializer),
-            rpn_bbox_pred=L.Convolution2D(
-                n_mid, 4 * n_anchor, 1, 1, 0, initialW=initializer)
+                in_channels, mid_channels, 3, 1, 1, initialW=initializer),
+            rpn_score=L.Convolution2D(
+                mid_channels, 2 * n_anchor, 1, 1, 0, initialW=initializer),
+            rpn_bbox=L.Convolution2D(
+                mid_channels, 4 * n_anchor, 1, 1, 0, initialW=initializer)
         )
 
     def __call__(self, x, img_size, scale=1., train=False):
         """Forward Region Proposal Network.
+
+        Currently, only arrays with batch size one are supported.
 
         Here are notations.
 
@@ -68,7 +74,11 @@ class RegionProposalNetwork(chainer.Chain):
         * :math:`C` channel size of the input.
         * :math:`H` and :math:`W` are height and witdh of the input feature.
         * :math:`A` is number of anchors assigned to each pixel.
-        * :math:`R` is number of rois produced.
+
+        An array of bounding boxes is an array of shape :math:`(R, 4)`, where
+        :math:`R` is the number of  bounding boxes in an image. Each
+        bouding box is organized by :obj:`(x_min, y_min, x_max, y_max)`
+        in the second axis.
 
         Args:
             x (~chainer.Variable): Feature extracted from an image.
@@ -81,39 +91,45 @@ class RegionProposalNetwork(chainer.Chain):
                 Default value is :obj:`False`.
 
         Returns:
-            (~chainer.Variable, ~chainer.Variable, array, array):
+            (~chainer.Variable, ~chainer.Variable, array, array, array):
 
-            This is a tuple of four following values.
+            This is a tuple of five following values.
 
-            * **rpn_bbox_pred**: Predicted regression targets for anchors. \
+            * **rpn_bboxes**: Predicted regression targets for anchors. \
                 Its shape is :math:`(1, 4 A, H, W)`.
-            * **rpn_cls_prob**:  Predicted foreground probability for \
+            * **rpn_scores**:  Predicted foreground scores for \
                 anchors. Its shape is :math:`(1, 2 A, H, W)`.
-            * **roi**: An array whose shape is :math:`(S, 5)`. The \
-                second axis contains \
-                :obj:`(batch_index, x_min, y_min, x_max, y_max)` of \
-                each region of interests.
-            * **anchor**: Coordinates of anchors. Its shape is \
-                :math:`(R, 4)`. The second axis contains x and y coordinates \
-                of left top vertices and right bottom vertices.
+            * **rois**: A bounding box array containing coordinates of \
+                proposal boxes.  The bounding box array is a concatenation of\
+                bounding box arrays \
+                from multiple images in the batch. \
+                Its shape is :math:`(R', 4)`. Given :math:`R_i` predicted \
+                bounding boxes for the :math:`i` th image and size of batch \
+                :math:`N`, :math:`R' = \\sum _{i=1} ^ N R_i`. \
+                Each bouding box is organized by \
+                :obj:`(x_min, y_min, x_max, y_max)` in the second axis. \
+            * **batch_indices**: An array containing indices of images to \
+                which bounding boxes correspond to. Its shape is :math:`(R',)`.
+            * **anchor**: Coordinates of anchors. This is an array of bounding\
+                boxes. Its length is :math:`A`.
 
         """
         xp = cuda.get_array_module(x)
         n = x.data.shape[0]
         h = F.relu(self.rpn_conv_3x3(x))
-        rpn_cls_score = self.rpn_cls_score(h)
-        c, hh, ww = rpn_cls_score.shape[1:]
-        rpn_cls_prob = F.softmax(rpn_cls_score.reshape(n, 2, -1))
-        rpn_cls_prob = rpn_cls_prob.reshape(n, c, hh, ww)
-        rpn_bbox_pred = self.rpn_bbox_pred(h)
+        rpn_scores = self.rpn_score(h)
+        c, hh, ww = rpn_scores.shape[1:]
+        rpn_probs = F.softmax(rpn_scores.reshape(n, 2, -1))
+        rpn_probs = rpn_probs.reshape(n, c, hh, ww)
+        rpn_bboxes = self.rpn_bbox(h)
 
         # enumerate all shifted anchors
         anchor = _enumerate_shifted_anchor(
             xp.array(self.anchor_base), self.feat_stride, ww, hh)
-        roi = self.proposal_layer(
-            rpn_bbox_pred, rpn_cls_prob, anchor, img_size,
+        rois, batch_indices = self.proposal_layer(
+            rpn_bboxes, rpn_probs, anchor, img_size,
             scale=scale, train=train)
-        return rpn_bbox_pred, rpn_cls_score, roi, anchor
+        return rpn_bboxes, rpn_scores, rois, batch_indices, anchor
 
 
 def _enumerate_shifted_anchor(anchor_base, feat_stride, width, height):

@@ -29,9 +29,7 @@ class FasterRCNNBase(chainer.Chain):
 
     def __init__(
             self, feature, rpn, head,
-            n_class, roi_size,
-            spatial_scale,
-            mean,
+            n_class, mean,
             nms_thresh=0.3,
             score_thresh=0.7,
             bbox_normalize_mean=(0., 0., 0., 0.),
@@ -42,9 +40,8 @@ class FasterRCNNBase(chainer.Chain):
             rpn=rpn,
             head=head,
         )
+
         self.n_class = n_class
-        self.roi_size = roi_size
-        self.spatial_scale = spatial_scale
         self.mean = mean
         self.nms_thresh = nms_thresh
         self.score_thresh = score_thresh
@@ -60,8 +57,8 @@ class FasterRCNNBase(chainer.Chain):
             return 'start'
 
         rpn_outs = [
-            'feature', 'rpn_bbox_pred', 'rpn_cls_score',
-            'roi', 'anchor']
+            'features', 'rpn_bboxes', 'rpn_scores',
+            'rois', 'batch_indices', 'anchor']
         for layer in rpn_outs:
             layers.pop(layer, None)
 
@@ -74,20 +71,20 @@ class FasterRCNNBase(chainer.Chain):
             if key in target:
                 target[key] = source[key]
 
-    def __call__(self, x, scale=1., layers=['bbox_tf', 'score'],
-                 test=True):
+    def __call__(self, x, scale=1.,
+                 layers=['rois', 'roi_bboxes', 'roi_scores'], test=True):
         """Computes all the feature maps specified by :obj:`layers`.
 
         Here are list of the names of layers that can be collected.
 
-        * feature: Feature extractor output.
-        * rpn_bbox_pred: RPN output.
-        * rpn_cls_score: RPN output.
-        * roi: RPN output.
+        * features: Feature extractor output.
+        * rpn_bboxes: RPN output.
+        * rpn_scores: RPN output.
+        * rois: RPN output.
+        * batch_indices: RPN output.
         * anchor: RPN output.
-        * pool: Pooled features according to RoIs.
-        * bbox_tf: Head output.
-        * score: Head output.
+        * roi_bboxes: Head output.
+        * roi_scores: Head output.
 
         Args:
             x (~chainer.Variable): Input variable.
@@ -103,40 +100,32 @@ class FasterRCNNBase(chainer.Chain):
 
         """
         activations = {key: None for key in layers}
-
         stop_at = self._decide_when_to_stop(activations)
         if stop_at == 'start':
             return {}
 
-        if isinstance(scale, chainer.Variable):
-            scale = scale.data
-        if isinstance(scale, float):
-            scale = np.array(scale)
-        scale = np.asscalar(cuda.to_cpu(scale))
         img_size = x.shape[2:][::-1]
 
         h = self.feature(x, train=not test)
-        rpn_bbox_pred, rpn_cls_score, roi, anchor =\
+        rpn_bboxes, rpn_scores, rois, batch_indices, anchor =\
             self.rpn(h, img_size, scale, train=not test)
 
         self._update_if_specified(
             activations,
-            {'feature': h,
-             'rpn_bbox_pred': rpn_bbox_pred,
-             'rpn_cls_score': rpn_cls_score,
-             'roi': roi,
+            {'features': h,
+             'rpn_bboxes': rpn_bboxes,
+             'rpn_scores': rpn_scores,
+             'rois': rois,
+             'batch_indices': batch_indices,
              'anchor': anchor})
         if stop_at == 'rpn':
             return activations
 
-        pool = F.roi_pooling_2d(
-            h, roi, self.roi_size, self.roi_size, self.spatial_scale)
-        bbox_tf, score = self.head(pool, train=False)
+        roi_bboxes, roi_scores = self.head(h, rois, batch_indices, train=False)
         self._update_if_specified(
             activations,
-            {'pool': pool,
-             'bbox_tf': bbox_tf,
-             'score': score})
+            {'roi_bboxes': roi_bboxes,
+             'roi_scores': roi_scores})
         return activations
 
     def _suppress(self, raw_bbox, raw_prob):
@@ -205,29 +194,28 @@ class FasterRCNNBase(chainer.Chain):
                 self.xp.asarray(img[None]), volatile=chainer.flag.ON)
             H, W = img_var.shape[2:]
             out = self.__call__(
-                img_var, scale=scale, layers=['roi', 'bbox_tf', 'score'])
-            roi = out['roi']
-            bbox_tf = out['bbox_tf']
-            score = out['score']
+                img_var, scale=scale,
+                layers=['rois', 'roi_bboxes', 'roi_scores'])
+            # We are assuming that batch size is 1.
+            roi_bbox = out['roi_bboxes'].data
+            roi_score = out['roi_scores'].data
+            roi = out['rois'] / scale
 
             # Convert predictions to bounding boxes in image coordinates.
             # Bounding boxes are scaled to the scale of the input images.
-            bbox_roi = roi[:, 1:5]
-            bbox_roi = bbox_roi / scale
-            bbox_tf_data = bbox_tf.data
             mean = self.xp.tile(self.xp.asarray(self.bbox_normalize_mean),
                                 self.n_class)
             std = self.xp.tile(self.xp.asarray(self.bbox_normalize_std),
                                self.n_class)
-            bbox_tf_data = (bbox_tf_data * std + mean).astype(np.float32)
-            raw_bbox = bbox_regression_target_inv(bbox_roi, bbox_tf_data)
+            roi_bbox = (roi_bbox * std + mean).astype(np.float32)
+            raw_bbox = bbox_regression_target_inv(roi, roi_bbox)
             # clip bounding box
             raw_bbox[:, slice(0, 4, 2)] = self.xp.clip(
                 raw_bbox[:, slice(0, 4, 2)], 0, W / scale)
             raw_bbox[:, slice(1, 4, 2)] = self.xp.clip(
                 raw_bbox[:, slice(1, 4, 2)], 0, H / scale)
 
-            raw_prob = F.softmax(score).data
+            raw_prob = F.softmax(roi_score).data
 
             raw_bbox = cuda.to_cpu(raw_bbox)
             raw_prob = cuda.to_cpu(raw_prob)
