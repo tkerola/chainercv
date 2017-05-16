@@ -6,6 +6,7 @@ from chainer import testing
 from chainer.testing import attr
 
 from chainercv.links import FasterRCNNBase
+from chainercv.links import FasterRCNNLoss
 
 
 def _random_array(xp, shape):
@@ -158,6 +159,43 @@ class TestFasterRCNNBase(unittest.TestCase):
     def test_predict_gpu(self):
         self.link.to_gpu()
         self.check_predict()
+
+
+class TestFasterRCNNLoss(unittest.TestCase):
+
+    def setUp(self):
+        self.n_anchor = 6
+        self.feat_stride = 4
+        self.n_class = 4
+        self.n_roi = 24
+        self.link = FasterRCNNLoss(DummyFasterRCNN(
+            n_anchor=self.n_anchor,
+            feat_stride=self.feat_stride,
+            n_class=self.n_class,
+            n_roi=self.n_roi
+        ))
+
+    def check_call(self):
+        xp = self.link.xp
+        
+        n_bbox = 3
+        imgs = chainer.Variable(_random_array(xp, (1, 3, 600, 800)))
+        bboxes = chainer.Variable(
+            _generate_bbox(xp, n_bbox, (600, 800), 16, 350)[None])
+        labels = chainer.Variable(
+            xp.random.randint(0, self.n_class, size=(n_bbox,))[None])
+        scale = chainer.Variable(xp.array(1.))
+        loss = self.link(imgs, bboxes, labels, scale)
+        self.assertEqual(loss.shape, ())
+
+    def test_call_cpu(self):
+        self.check_call()
+
+    @attr.gpu
+    def test_call_gpu(self):
+        self.link.to_gpu()
+        self.check_call()
+
 
 
 testing.run_module(__name__, __file__)

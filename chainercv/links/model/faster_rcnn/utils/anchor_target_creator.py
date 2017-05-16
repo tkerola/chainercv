@@ -62,7 +62,6 @@ class AnchorTargetCreator(object):
         * :math:`A` is number of anchors.
         * :math:`R` is number of bounding boxes.
         * :math:`H` and `W` are height and width of features.
-        * :math:`N` is batch size.
 
         For arrays of bounding boxes, its second axis contains
         x and y coordinates of left top vertices and right bottom vertices.
@@ -80,25 +79,19 @@ class AnchorTargetCreator(object):
             Tuple of four arrays which contains the following elements.
 
             * **bbox_target**: Bounding boxes encoded into regression \
-                targets. This is an array of shape :math:`(N, 4 A, H, W)`.
+                targets. This is an array of shape :math:`(4 A, H, W)`.
             * **label**: Labels of bounding boxes with values \
                 :obj:`(1=foreground, 0=background, -1=ignore)`. Its shape \
-                is :math:`(N, A, H, W)`.
+                is :math:`(A, H, W)`.
             * **bbox_inside_weight**: Inside weight used to compute losses \
-                for Faster RCNN. Its shape is :math:`(N, 4 A, H, W)`.
+                for Faster RCNN. Its shape is :math:`(4 A, H, W)`.
             * **bbox_outside_weight** Outside weight used to compute losses \
-                for Faster RCNN. Its shape is :math:`(N, 4 A, H, W)`.
+                for Faster RCNN. Its shape is :math:`(4 A, H, W)`.
 
         """
-        assert bbox.ndim == 3
-        assert bbox.shape[0] == 1
-        if isinstance(bbox, chainer.Variable):
-            bbox = bbox.data
         xp = cuda.get_array_module(bbox)
         bbox = cuda.to_cpu(bbox)
         anchor = cuda.to_cpu(anchor)
-
-        bbox = bbox[0]
 
         width, height = feat_size
         img_W, img_H = img_size
@@ -128,14 +121,14 @@ class AnchorTargetCreator(object):
 
         # reshape
         bbox_target = bbox_target.reshape(
-            (1, height, width, -1)).transpose(0, 3, 1, 2)
+            (height, width, -1)).transpose(2, 0, 1)
         label = label.reshape(
-            (1, height, width, -1)).transpose(0, 3, 1, 2)
+            (height, width, -1)).transpose(2, 0, 1)
         label = label.astype(np.int32)
         bbox_inside_weight = bbox_inside_weight.reshape(
-            (1, height, width, -1)).transpose(0, 3, 1, 2)
+            (height, width, -1)).transpose(2, 0, 1)
         bbox_outside_weight = bbox_outside_weight.reshape(
-            (1, height, width, -1)).transpose(0, 3, 1, 2)
+            (height, width, -1)).transpose(2, 0, 1)
 
         if xp != np:
             bbox_target = chainer.cuda.to_gpu(bbox_target)

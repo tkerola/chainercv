@@ -34,7 +34,7 @@ class TestAnchorTargetCreator(unittest.TestCase):
         n_anchor = self.n_anchor_base * np.prod(self.feat_size)
 
         self.anchor = _generate_bbox(n_anchor, self.img_size, 16, 200)
-        self.bbox = _generate_bbox(n_bbox, self.img_size, 16, 200)[None]
+        self.bbox = _generate_bbox(n_bbox, self.img_size, 16, 200)
         self.anchor_target_layer = AnchorTargetCreator(
             self.rpn_batch_size, rpn_fg_fraction=self.rpn_fg_fraction,
             rpn_bbox_inside_weight=self.rpn_bbox_inside_weight
@@ -56,13 +56,13 @@ class TestAnchorTargetCreator(unittest.TestCase):
 
         # Test shapes
         self.assertEqual(bbox_target.shape,
-                         (1, 4 * self.n_anchor_base) + self.feat_size[::-1])
+                         (4 * self.n_anchor_base,) + self.feat_size[::-1])
         self.assertEqual(label.shape,
-                         (1, self.n_anchor_base) + self.feat_size[::-1])
+                         (self.n_anchor_base,) + self.feat_size[::-1])
         self.assertEqual(bbox_inside_weight.shape,
-                         (1, 4 * self.n_anchor_base) + self.feat_size[::-1])
+                         (4 * self.n_anchor_base,) + self.feat_size[::-1])
         self.assertEqual(bbox_outside_weight.shape,
-                         (1, 4 * self.n_anchor_base) + self.feat_size[::-1])
+                         (4 * self.n_anchor_base,) + self.feat_size[::-1])
 
         # Test ratio of foreground and background labels
         np.testing.assert_equal(
@@ -76,8 +76,8 @@ class TestAnchorTargetCreator(unittest.TestCase):
 
         # Test bbox_inside_weight
         _bbox_inside_weight = bbox_inside_weight.reshape(
-            (1, self.n_anchor_base, 4) + self.feat_size[::-1])
-        _bbox_inside_weight = _bbox_inside_weight.transpose(0, 1, 3, 4, 2)
+            (self.n_anchor_base, 4) + self.feat_size[::-1])
+        _bbox_inside_weight = _bbox_inside_weight.transpose(0, 2, 3, 1)
         bbox_inside_weight_masked = _bbox_inside_weight[label == 1]
         bbox_inside_weight_target = xp.tile(
             xp.array(self.rpn_bbox_inside_weight),
@@ -88,8 +88,8 @@ class TestAnchorTargetCreator(unittest.TestCase):
 
         # Test bbox_outside_weight
         _bbox_outside_weight = bbox_outside_weight.reshape(
-            (1, self.n_anchor_base, 4) + self.feat_size[::-1])
-        _bbox_outside_weight = _bbox_outside_weight.transpose(0, 1, 3, 4, 2)
+            (self.n_anchor_base, 4) + self.feat_size[::-1])
+        _bbox_outside_weight = _bbox_outside_weight.transpose(0, 2, 3, 1)
         bbox_outside_weight_masked = _bbox_outside_weight[label >= 0]
         bbox_outside_weight_target = xp.ones_like(
             bbox_outside_weight_masked) / (n_fg + n_bg)

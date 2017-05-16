@@ -1,4 +1,7 @@
+import numpy as np
+
 import chainer
+from chainer import cuda
 import chainer.functions as F
 
 from chainercv.functions.smooth_l1_loss import smooth_l1_loss
@@ -18,8 +21,6 @@ class FasterRCNNLoss(chainer.Chain):
         self.rpn_sigma = rpn_sigma
         self.sigma = sigma
         self.n_class = faster_rcnn.n_class
-        self.roi_size = faster_rcnn.roi_size
-        self.spatial_scale = faster_rcnn.spatial_scale
 
         # These parameters need to be consistent across modules
         proposal_target_creator_params.update({
@@ -34,53 +35,62 @@ class FasterRCNNLoss(chainer.Chain):
 
         self.train = True
 
-    def __call__(self, img, bbox, label, scale=1.):
-        if isinstance(bbox, chainer.Variable):
-            bbox = bbox.data
-        if isinstance(label, chainer.Variable):
-            label = label.data
+    def __call__(self, imgs, bboxes, labels, scale):
+        if isinstance(bboxes, chainer.Variable):
+            bboxes = bboxes.data
+        if isinstance(labels, chainer.Variable):
+            labels = labels.data
+        if isinstance(scale, chainer.Variable):
+            scale = scale.data
+        scale = np.asscalar(cuda.to_cpu(scale))
+        if bboxes.shape[0] != 1:
+            raise ValueError('currently only batch size 1 is supported')
+        bbox = bboxes[0]
+        label = labels[0]
+        img_size = imgs.shape[2:][::-1]
 
-        img_size = img.shape[2:][::-1]
-        layers = ['feature', 'rpn_bbox_pred', 'rpn_cls_score',
-                  'roi', 'anchor']
         out = self.faster_rcnn(
-            img, scale=scale, layers=layers,
+            imgs, scale=scale,
+            layers=['features', 'rpn_bboxes', 'rpn_scores',
+                    'rois', 'batch_indices', 'anchor'],
             test=not self.train)
 
         # RPN losses
-        n, _, hh, ww = out['rpn_bbox_pred'].shape
+
+        n, _, hh, ww = out['rpn_bboxes'].shape
+        # THIS IS SINGULAR, but ROI_* are not SINGULAR
         rpn_bbox_target, rpn_label, rpn_bbox_inside_weight, \
             rpn_bbox_outside_weight = self.anchor_target_creator(
                 bbox, out['anchor'], (ww, hh), img_size)
-        rpn_label = rpn_label.reshape((n, -1))
-        rpn_cls_score = out['rpn_cls_score'].reshape(1, 2, -1)
-        rpn_cls_loss = F.softmax_cross_entropy(rpn_cls_score, rpn_label)
-        rpn_loss_bbox = smooth_l1_loss(
-            out['rpn_bbox_pred'],
-            rpn_bbox_target,
-            rpn_bbox_inside_weight,
-            rpn_bbox_outside_weight, self.rpn_sigma)
+        rpn_labels = rpn_label.reshape((n, -1))
+        rpn_scores = out['rpn_scores'].reshape(1, 2, -1)
+        rpn_cls_loss = F.softmax_cross_entropy(rpn_scores, rpn_labels)
+        rpn_bbox_loss = smooth_l1_loss(
+            out['rpn_bboxes'],
+            rpn_bbox_target[None],
+            rpn_bbox_inside_weight[None],
+            rpn_bbox_outside_weight[None],
+            self.rpn_sigma)
 
         # Sample RoIs and forward
-        roi_sample, bbox_target_sample, label_sample, bbox_inside_weight, \
-            bbox_outside_weight = self.proposal_target_creator(
-                out['roi'], bbox, label)
-        pool5 = F.roi_pooling_2d(
-            out['feature'],
-            roi_sample, self.roi_size, self.roi_size, self.spatial_scale)
-        bbox_tf, score = self.faster_rcnn.head(pool5, train=self.train)
+        sample_rois, roi_bbox_targets, roi_labels, roi_bbox_inside_weights, \
+            roi_bbox_outside_weights = self.proposal_target_creator(
+                out['rois'], bbox, label)
+        roi_bboxes, roi_scores = self.faster_rcnn.head(
+            out['features'], sample_rois, out['batch_indices'])
 
         # Losses for outputs of the head.
-        loss_cls = F.softmax_cross_entropy(score, label_sample)
-        loss_bbox = smooth_l1_loss(
-            bbox_tf, bbox_target_sample,
-            bbox_inside_weight, bbox_outside_weight, self.sigma)
+        cls_loss = F.softmax_cross_entropy(roi_scores, roi_labels)
+        bbox_loss = smooth_l1_loss(
+            roi_bboxes, roi_bbox_targets,
+            roi_bbox_inside_weights, roi_bbox_outside_weights,
+            self.sigma)
 
-        loss = rpn_loss_bbox + rpn_cls_loss + loss_bbox + loss_cls
-        chainer.reporter.report({'rpn_loss_cls': rpn_cls_loss,
-                                 'rpn_loss_bbox': rpn_loss_bbox,
-                                 'loss_bbox': loss_bbox,
-                                 'loss_cls': loss_cls,
+        loss = rpn_bbox_loss + rpn_cls_loss + bbox_loss + cls_loss
+        chainer.reporter.report({'rpn_bbox_loss': rpn_bbox_loss,
+                                 'rpn_cls_loss': rpn_cls_loss,
+                                 'bbox_loss': bbox_loss,
+                                 'cls_loss': cls_loss,
                                  'loss': loss},
                                 self)
         return loss
