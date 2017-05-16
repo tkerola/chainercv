@@ -76,8 +76,10 @@ class FasterRCNNLoss(chainer.Chain):
         sample_rois, roi_bbox_targets, roi_labels, roi_bbox_inside_weights, \
             roi_bbox_outside_weights = self.proposal_target_creator(
                 out['rois'], bbox, label)
+        sample_batch_indices = self.xp.zeros(
+            (len(sample_rois),), dtype=np.int32)
         roi_bboxes, roi_scores = self.faster_rcnn.head(
-            out['features'], sample_rois, out['batch_indices'])
+            out['features'], sample_rois, sample_batch_indices)
 
         # Losses for outputs of the head.
         cls_loss = F.softmax_cross_entropy(roi_scores, roi_labels)
