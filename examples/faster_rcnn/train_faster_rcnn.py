@@ -57,7 +57,7 @@ def main():
                         help='Output directory')
     parser.add_argument('--seed', '-s', default=0)
     parser.add_argument('--step_size', '-ss', default=50000)
-    parser.add_argument('--iteration', '-i', default=70000)
+    parser.add_argument('--iteration', '-i', type=int, default=70000)
     args = parser.parse_args()
 
     gpu = args.gpu
@@ -77,9 +77,10 @@ def main():
         labels = pascal_voc_labels
         train_data = VOCDetectionDataset(mode='trainval', year='2007')
     elif args.dataset == 'voc07+voc12':
+        labels = pascal_voc_labels
         voc07 = VOCDetectionDataset(mode='trainval', year='2007')
         voc12 = VOCDetectionDataset(mode='trainval', year='2012')
-        train_data = MergeDataset(voc07, voc12)
+        train_data = MergeDataset([voc07, voc12])
 
     def get_transform(use_random):
         min_size = 600
