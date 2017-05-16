@@ -19,6 +19,8 @@ from chainercv.datasets.pascal_voc.voc_utils import pascal_voc_labels
 
 from chainer.training.triggers.manual_schedule_trigger import ManualScheduleTrigger
 
+from merge_dataset import MergeDataset
+
 
 mean_pixel = np.array([102.9801, 115.9465, 122.7717])[:, None, None]
 
@@ -50,6 +52,7 @@ def main():
         description='ChainerCV example: Faster RCNN')
     parser.add_argument('--gpu', '-g', type=int, default=-1)
     parser.add_argument('--lr', '-l', type=float, default=1e-3)
+    parser.add_argument('--dataset', '-d', type=str, default='voc07')
     parser.add_argument('--out', '-o', default='result',
                         help='Output directory')
     parser.add_argument('--seed', '-s', default=0)
@@ -64,13 +67,19 @@ def main():
     step_size = args.step_size
     iteration = args.iteration
 
+    print('iteration ', iteration)
+    print('dataset', args.dataset)
+
     np.random.seed(seed)
 
-    labels = pascal_voc_labels
-    train_data = VOCDetectionDataset(mode='trainval', year='2007')
-    test_data = VOCDetectionDataset(
-        mode='test', year='2007',
-        use_difficult=True, return_difficult=True)
+    if args.dataset == 'voc07':
+        # size 5011
+        labels = pascal_voc_labels
+        train_data = VOCDetectionDataset(mode='trainval', year='2007')
+    elif args.dataset == 'voc07+voc12':
+        voc07 = VOCDetectionDataset(mode='trainval', year='2007')
+        voc12 = VOCDetectionDataset(mode='trainval', year='2012')
+        train_data = MergeDataset(voc07, voc12)
 
     def get_transform(use_random):
         min_size = 600
@@ -104,7 +113,6 @@ def main():
         return transform
 
     train_data = TransformDataset(train_data, get_transform(True))
-    test_data = TransformDataset(test_data, get_transform(False))
 
     model = FasterRCNNLoss(
         FasterRCNNVGG16(n_class=len(labels), score_thresh=0.05)
