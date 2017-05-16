@@ -18,7 +18,6 @@ from chainercv.links import FasterRCNNLoss
 from chainercv.datasets.pascal_voc.voc_utils import pascal_voc_labels
 
 from chainer.training.triggers.manual_schedule_trigger import ManualScheduleTrigger
-from detection_report import DetectionReport
 
 
 mean_pixel = np.array([102.9801, 115.9465, 122.7717])[:, None, None]
@@ -188,21 +187,6 @@ def main():
             ),
             trigger=plot_interval
         )
-
-    def post_transform(in_data):
-        img, bbox, label, scale, difficult = in_data
-        _, H, W = img.shape
-        o_W = int(W / scale)
-        o_H = int(H / scale)
-        bbox = transforms.resize_bbox(bbox, (W, H), (o_W, o_H))
-        return img, bbox, label, scale, difficult
-
-    trainer.extend(
-        DetectionReport(
-            model.faster_rcnn, test_data, gpu, len(labels), minoverlap=0.5,
-            use_07_metric=True, post_transform=post_transform),
-        trigger=val_interval, invoke_before_training=False
-    )
 
     trainer.extend(extensions.dump_graph('main/loss'))
 
