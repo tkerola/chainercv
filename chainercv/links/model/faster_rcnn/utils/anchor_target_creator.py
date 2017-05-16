@@ -144,7 +144,7 @@ class AnchorTargetCreator(object):
         label = np.empty((len(inds_inside), ), dtype=np.float32)
         label.fill(-1)
 
-        argmax_overlaps, max_overlaps, gt_max_overlaps, gt_argmax_overlaps = \
+        argmax_overlaps, max_overlaps, gt_argmax_overlaps = \
             self._calc_overlaps(anchor, bbox, inds_inside)
 
         # assign bg labels first so that positive labels can clobber them
@@ -187,8 +187,7 @@ class AnchorTargetCreator(object):
                                    np.arange(overlaps.shape[1])]
         gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
 
-        return argmax_overlaps, max_overlaps, gt_max_overlaps, \
-            gt_argmax_overlaps
+        return argmax_overlaps, max_overlaps, gt_argmax_overlaps
 
     def _calc_outside_weights(self, inds_inside, label):
         bbox_outside_weight = np.zeros(
