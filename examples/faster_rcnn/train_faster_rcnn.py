@@ -69,8 +69,18 @@ def main():
 
     print('iteration ', iteration)
     print('dataset', args.dataset)
+    print('step_size', step_size)
 
     np.random.seed(seed)
+
+    faster_rcnn = FasterRCNNVGG16(n_class=len(labels), score_thresh=0.05)
+    model = FasterRCNNLoss(faster_rcnn)
+    if gpu >= 0:
+        model.to_gpu(gpu)
+        chainer.cuda.get_device(gpu).use()
+    optimizer = chainer.optimizers.MomentumSGD(lr=lr, momentum=0.9)
+    optimizer.setup(model)
+    optimizer.add_hook(chainer.optimizer.WeightDecay(rate=0.0005))
 
     if args.dataset == 'voc07':
         # size 5011
@@ -82,49 +92,19 @@ def main():
         voc12 = VOCDetectionDataset(mode='trainval', year='2012')
         train_data = MergeDataset([voc07, voc12])
 
-    def get_transform(use_random):
-        min_size = 600
-        max_size = 1000
-        def transform(in_data):
-            has_difficult = len(in_data) == 4
-            img, bbox, label = in_data[:3]
-            img -= mean_pixel 
-            # Resize bounding box to a shape
-            # with the smaller edge at least at length 600
-            _, H, W = img.shape
-            scale = 1.
-            if min(H, W) < min_size:
-                scale = min_size / min(H, W)
+    def transform(in_data):
+        img, bbox, label = in_data
+        img, scale = faster_rcnn.prepare(img)
+        o_W, o_H = int(W * scale), int(H * scale)
+        bbox = transforms.resize_bbox(bbox, (W, H), (o_W, o_H))
 
-            if scale * max(H, W) > max_size:
-                scale = max(H, W) * scale / max_size
+        # horizontally flip
+        img, params = transforms.random_flip(
+            img, x_random=True, return_param=True)
+        bbox = transforms.flip_bbox(bbox, (o_W, o_H), params['x_flip'])
 
-            o_W, o_H = int(W * scale), int(H * scale)
-            img = transforms.resize(img, (o_W, o_H))
-            bbox = transforms.resize_bbox(bbox, (W, H), (o_W, o_H))
-
-            # horizontally flip
-            if use_random:
-                img, params = transforms.random_flip(img, x_random=True, return_param=True)
-                bbox = transforms.flip_bbox(bbox, (o_W, o_H), params['x_flip'])
-
-            if has_difficult:
-                return img, bbox, label, scale, in_data[-1]
-            return img, bbox, label, scale
-        return transform
-
-    train_data = TransformDataset(train_data, get_transform(True))
-
-    model = FasterRCNNLoss(
-        FasterRCNNVGG16(n_class=len(labels), score_thresh=0.05)
-    )
-
-    if gpu >= 0:
-        model.to_gpu(gpu)
-        chainer.cuda.get_device(gpu).use()
-    optimizer = chainer.optimizers.MomentumSGD(lr=lr, momentum=0.9)
-    optimizer.setup(model)
-    optimizer.add_hook(chainer.optimizer.WeightDecay(rate=0.0005))
+        return img, bbox, label, scale
+    train_data = TransformDataset(train_data, transform)
 
     train_iter = chainer.iterators.MultiprocessIterator(
         train_data, batch_size=1, n_processes=None, shared_mem=100000000)
