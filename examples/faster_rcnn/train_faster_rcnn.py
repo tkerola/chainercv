@@ -56,7 +56,7 @@ def main():
     parser.add_argument('--out', '-o', default='result',
                         help='Output directory')
     parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--step_size', '-ss', default=50000)
+    parser.add_argument('--step_size', '-ss', type=int, default=50000)
     parser.add_argument('--iteration', '-i', type=int, default=70000)
     args = parser.parse_args()
 
@@ -73,15 +73,6 @@ def main():
 
     np.random.seed(seed)
 
-    faster_rcnn = FasterRCNNVGG16(n_class=len(labels), score_thresh=0.05)
-    model = FasterRCNNLoss(faster_rcnn)
-    if gpu >= 0:
-        model.to_gpu(gpu)
-        chainer.cuda.get_device(gpu).use()
-    optimizer = chainer.optimizers.MomentumSGD(lr=lr, momentum=0.9)
-    optimizer.setup(model)
-    optimizer.add_hook(chainer.optimizer.WeightDecay(rate=0.0005))
-
     if args.dataset == 'voc07':
         # size 5011
         labels = pascal_voc_labels
@@ -92,8 +83,18 @@ def main():
         voc12 = VOCDetectionDataset(mode='trainval', year='2012')
         train_data = MergeDataset([voc07, voc12])
 
+    faster_rcnn = FasterRCNNVGG16(n_class=len(labels), score_thresh=0.05)
+    model = FasterRCNNLoss(faster_rcnn)
+    if gpu >= 0:
+        model.to_gpu(gpu)
+        chainer.cuda.get_device(gpu).use()
+    optimizer = chainer.optimizers.MomentumSGD(lr=lr, momentum=0.9)
+    optimizer.setup(model)
+    optimizer.add_hook(chainer.optimizer.WeightDecay(rate=0.0005))
+
     def transform(in_data):
         img, bbox, label = in_data
+        _, H, W = img.shape
         img, scale = faster_rcnn.prepare(img)
         o_W, o_H = int(W * scale), int(H * scale)
         bbox = transforms.resize_bbox(bbox, (W, H), (o_W, o_H))
