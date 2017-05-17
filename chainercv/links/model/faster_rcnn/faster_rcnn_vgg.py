@@ -11,6 +11,12 @@ from chainercv.links.model.faster_rcnn.region_proposal_network import \
     RegionProposalNetwork
 
 
+def _relu(x):
+    # use_cudnn = False is sometimes x3 faster than otherwise.
+    # This will be the default mode in Chainer v2.
+    return F.relu(x, use_cudnn=False)
+
+
 class FasterRCNNVGG16(FasterRCNNBase):
 
     """FasterRCNN based on VGG16.
