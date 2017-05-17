@@ -1,11 +1,10 @@
-from chainer.serializers import NpzDeserializer
+
 import numpy as np
 import chainer
 from chainercv.links import FasterRCNNVGG16
 
 
 npz = np.load('result/model2017-05-10_03:16:56')
-deserializer = NpzDeserializer(npz)
 model = FasterRCNNVGG16(n_class=21)
 
 not_used_keys = []
