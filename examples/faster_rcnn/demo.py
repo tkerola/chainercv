@@ -2,6 +2,10 @@ import argparse
 import matplotlib.pyplot as plot
 import numpy as np
 
+<<<<<<< HEAD
+=======
+import chainer
+>>>>>>> faster-rcnn-test
 from chainer import serializers
 
 from chainercv.datasets.pascal_voc import voc_utils
@@ -12,12 +16,16 @@ from chainercv.visualizations import vis_bbox
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('gpu')
     parser.add_argument('model')
     parser.add_argument('image')
     args = parser.parse_args()
 
-    model = FasterRCNNVGG16(n_class=21)
+    model = FasterRCNNVGG16(n_class=21, pretrained_model='voc07')
     serializers.load_npz(args.model, model)
+    if args.gpu >= 0:
+        model.to_gpu(args.gpu)
+        chainer.cuda.get_device(args.gpu).use()
 
     img = utils.read_image(args.image, color=True)
     bboxes, labels, scores = model.predict(img[np.newaxis])
