@@ -4,7 +4,8 @@ import chainer
 from chainercv.links import FasterRCNNVGG16
 
 
-npz = np.load('result/model2017-05-10_03:16:56')
+# npz = np.load('result/model2017-05-10_03:16:56')
+npz = np.load('result/model2017-05-17_15:58:07')
 model = FasterRCNNVGG16(n_class=21)
 
 not_used_keys = []
@@ -35,5 +36,8 @@ model.head.score.W.data[:] = npz['head/cls_score/W']
 model.head.score.b.data[:] = npz['head/cls_score/b']
 
 
-chainer.serializers.save_npz('working_weight_new', model)
+
+fn = 'result/working_weight_new.npz'
+print 'saving to {}'.format(fn)
+chainer.serializers.save_npz(fn, model)
 
