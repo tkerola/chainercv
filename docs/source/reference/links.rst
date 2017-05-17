@@ -26,6 +26,12 @@ RegionProposalNetwork
    :members:
    :special-members:  __call__
 
+AnchorTargetCreator
+"""""""""""""""""""
+.. autoclass:: AnchorTargetCreator
+   :members:
+   :special-members:  __call__
+
 bbox_regression_target
 """"""""""""""""""""""
 .. autofunction:: chainercv.links.bbox_regression_target
@@ -43,3 +49,10 @@ ProposalCreator
 .. autoclass:: ProposalCreator
    :members:
    :special-members:  __call__
+
+ProposalTargetCreator
+"""""""""""""""""""""
+.. autoclass:: ProposalTargetCreator
+   :members:
+   :special-members:  __call__
+

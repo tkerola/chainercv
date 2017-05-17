@@ -11,12 +11,7 @@ class ProposalTargetCreator(object):
     """Assign proposals to ground-truth targets.
 
     The :meth:`__call__` of this class generates training targets/labels
-    for each object proposal. These are
-
-    * labels to set of :math:`1, ..., K` classes and the background class.
-    * Regression targets for bounding boxes in the case when their labels are \
-        not the background (i.e. label :math:`> 0`)
-
+    for each object proposal.
     This is used to train Faster RCNN [1].
 
     .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
@@ -58,158 +53,159 @@ class ProposalTargetCreator(object):
         self.bg_thresh_hi = bg_thresh_hi
         self.bg_thresh_lo = bg_thresh_lo
 
-    def __call__(self, roi, bbox, label):
-        """It assigns labels to sampled proposals from RPN.
+    def __call__(self, roi, raw_bbox, label):
+        """Assigns labels to sampled proposals from RPN.
 
-        This samples total of :obj:`self.batch_size`. The last
-        :obj:`self.fg_fraction * self.batch_size` samples are all
-        assigned to the background label.
+        This samples total of :obj:`self.batch_size` RoIs from concatenated
+        list of bounding boxes from :obj:`roi` and :obj:`bbox`.
+        The RoIs are assigned with the ground truth class labels and bounding
+        box offsets.
+        As many as :obj:`fg_fraction * self.batch_size` RoIs are
+        sampled with foreground label assignments.
+
+        The second axis of the bounding box arrays contain coordinates
+        of bounding boxes which are ordered by
+        :obj:`(x_min, y_min, x_max, y_max)`.
+        Offsets of bounding boxes are calculated using
+        :func:`chainercv.links.bbox_regression_target`.
+        Also, types of inputs and outputs are same.
 
         Here are notations.
 
-        * :math:`N` is batchsize.
-        * :math:`S` nad :math:`R` are numbers of bounding boxes in \
-            :obj:`roi` and :obj:`bbox`.
+        * :math:`S` is the total number of sampled RoIs, which equals \
+            :obj:`self.batch_size`.
         * :math:`K` is number of object classes.
 
         Args:
-            bbox (array): The ground truth bounding boxes. Its shape is \
-                :math:`(R, 4)`.
-            label (array): The ground truth bounding box labels. Its shape \
-                is :math:`(R,)`.
             roi (array): Region of interests from which we sample.
-                This is an array whose shape is :math:`(S, 4)`. The
-                second axis contains \
-                :obj:`(x_min, y_min, x_max, y_max)` of \
-                each region of interests.
+                This is an array whose shape is :math:`(R, 4)`
+            raw_bbox (array): The ground truth bounding boxes. Its shape is \
+                :math:`(R', 4)`.
+            label (array): The ground truth bounding box labels. Its shape \
+                is :math:`(R',)`.
 
         Returns:
-            (array, array, array, array, array, array):
+            (array, array, array, array, array):
 
             * **sample_roi**: Regions of interests that are sampled. \
-                This is an array whose shape is \
-                :obj:`(self.batch_size, 5)`. The second axis contains \
-                :obj:`(x_min, y_min, x_max, y_max)` of \
-                each region of interests.
-            * **roi_bbox_target**: Bounding boxes that are sampled. \
-                Its shape is :obj:`(self.batch_size, 4K)`. The last \
-                axis represents bounding box targets for each of the \
+                Its shape is :math:`(S, 4)`.
+            * **roi_bbox**: Bounding boxes that are sampled. \
+                Its shape is :math:`(S, K \\times 4)`. The last \
+                axis represents bounding box offsets for each of the \
                 :math:`K` classes. The coordinates for the same class is \
                 contiguous in this array. The coordinates are ordered by \
                 :obj:`x_min, y_min, x_max, y_max`.
             * **roi_gt_label**: Labels sampled for training. Its shape is \
-                :obj:`(self.batch_size,)`.
-            * **roi_bbox_inside_weight**: Inside weights used to compute losses \
-                for Faster RCNN. Its shape is \
-                :math:`(self.batch_size, 4K)`. The last axis is organized \
+                :math:`(S,)`.
+            * **roi_bbox_inside_weight**: Inside weights used to \
+                compute losses for Faster RCNN. Its shape is \
+                :math:`(S, K \\times 4)`. The second axis is organized \
                 similarly to :obj:`roi_bbox_target`.
-            * **roi_bbox_outside_weight**: Outside weights used to compute losses \
-                for Faster RCNN. Its shape is \
-                :math:`(self.batch_size, 4K)`. The last axis is organized \
+            * **roi_bbox_outside_weight**: Outside weights used to compute \
+                losses for Faster RCNN. Its shape is \
+                :math:`(S, K \\times 4)`. The second axis is organized \
                 similarly to :obj:`roi_bbox_target`.
 
         """
         xp = cuda.get_array_module(roi)
         roi = cuda.to_cpu(roi)
-        bbox = cuda.to_cpu(bbox)
+        raw_bbox = cuda.to_cpu(raw_bbox)
         label = cuda.to_cpu(label)
 
-        n_bbox, _ = bbox.shape
-        assert bbox.shape[1] == 4
+        n_bbox, _ = raw_bbox.shape
 
-        # assuming that batch size is 1
-        roi = np.concatenate((roi, bbox), axis=0)
+        roi = np.concatenate((roi, raw_bbox), axis=0)
 
-        fg_rois = np.round(self.fg_fraction * self.batch_size)
+        fg_roi = np.round(self.fg_fraction * self.batch_size)
 
         # Sample rois with classification labels and bounding box regression
         # targets
-        roi_gt_label, sample_roi, roi_bbox_target, roi_bbox_inside_weight =\
+        sample_roi, roi_gt_bbox, roi_gt_label, roi_bbox_inside_weight =\
             self._sample_roi(
-                roi, bbox, label, fg_rois,
+                roi, raw_bbox, label, fg_roi,
                 self.batch_size, self.n_class)
         roi_gt_label = roi_gt_label.astype(np.int32)
         sample_roi = sample_roi.astype(np.float32)
 
-        roi_bbox_outside_weight = (roi_bbox_inside_weight > 0).astype(np.float32)
+        roi_bbox_outside_weight =\
+            (roi_bbox_inside_weight > 0).astype(np.float32)
 
         if xp != np:
             sample_roi = cuda.to_gpu(sample_roi)
-            roi_bbox_target = cuda.to_gpu(roi_bbox_target)
+            roi_gt_bbox = cuda.to_gpu(roi_gt_bbox)
             roi_gt_label = cuda.to_gpu(roi_gt_label)
             roi_bbox_inside_weight = cuda.to_gpu(roi_bbox_inside_weight)
             roi_bbox_outside_weight = cuda.to_gpu(roi_bbox_outside_weight)
-        return sample_roi, roi_bbox_target, roi_gt_label,\
+        return sample_roi, roi_gt_bbox, roi_gt_label,\
             roi_bbox_inside_weight, roi_bbox_outside_weight
 
     def _sample_roi(
-            self, roi, bbox, label, fg_rois_per_image, rois_per_image,
+            self, roi, raw_bbox, label, fg_roi_per_image, roi_per_image,
             n_class):
         # Generate a random sample of RoIs comprising foreground and background
         # examples.
-        # overlaps: (rois x gt_boxes)
-        overlap = bbox_overlap(roi, bbox)
+        overlap = bbox_overlap(roi, raw_bbox)
         gt_assignment = overlap.argmax(axis=1)
-        max_overlaps = overlap.max(axis=1)
+        max_overlap = overlap.max(axis=1)
         roi_gt_label = label[gt_assignment]
 
         # Select foreground RoIs as those with >= FG_THRESH overlap
-        fg_inds = np.where(max_overlaps >= self.fg_thresh)[0]
-        # Guard against the case when an image has fewer than fg_rois_per_image
+        fg_index = np.where(max_overlap >= self.fg_thresh)[0]
+        # Guard against the case when an image has fewer than fg_roi_per_image
         # foreground RoIs
-        fg_rois_per_this_image = int(min(fg_rois_per_image, fg_inds.size))
+        fg_roi_per_this_image = int(min(fg_roi_per_image, fg_index.size))
         # Sample foreground regions without replacement
-        if fg_inds.size > 0:
-            fg_inds = np.random.choice(
-                fg_inds, size=fg_rois_per_this_image, replace=False)
+        if fg_index.size > 0:
+            fg_index = np.random.choice(
+                fg_index, size=fg_roi_per_this_image, replace=False)
 
         # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI)
-        bg_inds = np.where((max_overlaps < self.bg_thresh_hi) &
-                           (max_overlaps >= self.bg_thresh_lo))[0]
+        bg_index = np.where((max_overlap < self.bg_thresh_hi) &
+                            (max_overlap >= self.bg_thresh_lo))[0]
         # Compute number of background RoIs to take from this image (guarding
         # against there being fewer than desired)
-        bg_rois_per_this_image = rois_per_image - fg_rois_per_this_image
-        bg_rois_per_this_image = int(min(bg_rois_per_this_image, bg_inds.size))
+        bg_roi_per_this_image = roi_per_image - fg_roi_per_this_image
+        bg_roi_per_this_image = int(min(bg_roi_per_this_image, bg_index.size))
         # Sample background regions without replacement
-        if bg_inds.size > 0:
-            bg_inds = np.random.choice(
-                bg_inds, size=bg_rois_per_this_image, replace=False)
+        if bg_index.size > 0:
+            bg_index = np.random.choice(
+                bg_index, size=bg_roi_per_this_image, replace=False)
 
         # The indices that we're selecting (both fg and bg)
-        keep_inds = np.append(fg_inds, bg_inds)
+        keep_index = np.append(fg_index, bg_index)
         # Select sampled values from various arrays:
-        roi_gt_label = roi_gt_label[keep_inds]
+        roi_gt_label = roi_gt_label[keep_index]
         # Clamp labels for the background RoIs to 0
-        roi_gt_label[fg_rois_per_this_image:] = 0
-        sample_roi = roi[keep_inds]
+        roi_gt_label[fg_roi_per_this_image:] = 0
+        sample_roi = roi[keep_index]
 
-        bbox_sample = bbox_regression_target(
-            sample_roi, bbox[gt_assignment[keep_inds]])
+        roi_gt_bbox = bbox_regression_target(
+            sample_roi, raw_bbox[gt_assignment[keep_index]])
         # Normalize targets by a precomputed mean and stdev
-        bbox_sample = ((bbox_sample - np.array(self.bbox_normalize_mean)
-                        ) / np.array(self.bbox_normalize_std))
+        roi_gt_bbox = ((roi_gt_bbox - np.array(self.bbox_normalize_mean)
+                 ) / np.array(self.bbox_normalize_std))
 
-        roi_bbox_target, roi_bbox_inside_weight = \
+        roi_gt_bbox, roi_bbox_inside_weight = \
             _get_bbox_regression_label(
-                bbox_sample, roi_gt_label, n_class, self.bbox_inside_weight)
-        return roi_gt_label, sample_roi, roi_bbox_target, roi_bbox_inside_weight
+                roi_gt_bbox, roi_gt_label, n_class, self.bbox_inside_weight)
+        return sample_roi, roi_gt_bbox, roi_gt_label, roi_bbox_inside_weight
 
 
 def _get_bbox_regression_label(bbox, label, n_class, bbox_inside_weight_coeff):
     # Bounding-box regression targets (bbox_target_data) are stored in a
-    # compact form N x (class, tx, ty, tw, th)
+    # compact form S x (class, tx, ty, tw, th)
     # This function expands those targets into the 4-of-4*K representation
     # used by the network (i.e. only one class has non-zero targets).
 
     # Returns:
-    #     bbox_target (ndarray): N x 4K blob of regression targets
-    #     roi_bbox_inside_weights (ndarray): N x 4K blob of loss weights
+    #     bbox_target (ndarray): S x 4K blob of regression targets
+    #     roi_bbox_inside_weights (ndarray): S x 4K blob of loss weights
 
     n_bbox = label.shape[0]
     bbox_target = np.zeros((n_bbox, 4 * n_class), dtype=np.float32)
     bbox_inside_weight = np.zeros_like(bbox_target)
-    inds = np.where(label > 0)[0]
-    for ind in inds:
+    index = np.where(label > 0)[0]
+    for ind in index:
         cls = int(label[ind])
         start = int(4 * cls)
         end = int(start + 4)
