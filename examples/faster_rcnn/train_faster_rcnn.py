@@ -131,10 +131,10 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['iteration', 'epoch', 'elapsed_time', 'lr',
          'main/loss',
-         'main/loss_bbox',
-         'main/loss_cls',
-         'main/rpn_loss_cls',
-         'main/rpn_loss_bbox',
+         'main/bbox_loss',
+         'main/cls_loss',
+         'main/rpn_bbox_loss',
+         'main/rpn_cls_loss',
          'map'
          ]), trigger=print_interval)
     trainer.extend(extensions.ProgressBar(update_interval=10))
@@ -145,34 +145,6 @@ def main():
             extensions.PlotReport(
                 ['main/loss'],
                 file_name='loss.png', trigger=plot_interval
-            ),
-            trigger=plot_interval
-        )
-        trainer.extend(
-            extensions.PlotReport(
-                ['main/rpn_loss_cls'],
-                file_name='rpn_loss_cls.png', trigger=plot_interval
-            ),
-            trigger=plot_interval
-        )
-        trainer.extend(
-            extensions.PlotReport(
-                ['main/rpn_loss_bbox'],
-                file_name='rpn_loss_bbox.png'
-            ),
-            trigger=plot_interval
-        )
-        trainer.extend(
-            extensions.PlotReport(
-                ['main/loss_cls'],
-                file_name='loss_cls.png'
-            ),
-            trigger=plot_interval
-        )
-        trainer.extend(
-            extensions.PlotReport(
-                ['main/loss_bbox'],
-                file_name='loss_bbox.png'
             ),
             trigger=plot_interval
         )
