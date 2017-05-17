@@ -134,7 +134,7 @@ def main():
     trainer = training.Trainer(updater, (iteration, 'iteration'), out=out)
 
     trainer.extend(extensions.snapshot_object(
-        model.faster_rcnn, 'model'), trigger=(iteration, 'iteration'))
+        model.faster_rcnn, 'snapshot_model.npz'), trigger=(iteration, 'iteration'))
     trainer.extend(extensions.ExponentialShift('lr', 0.1),
                    trigger=(step_size, 'iteration'))
 
