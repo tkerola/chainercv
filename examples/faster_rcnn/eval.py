@@ -51,7 +51,7 @@ def main():
         pred_bboxes, pred_labels, pred_scores, gt_bboxes,
         gt_labels, n_class=len(voc_utils.pascal_voc_labels),
         gt_difficults=gt_difficults,
-        minoverlap=0.5, use_07_metric=True)
+        min_iou=0.5, use_07_metric=True)
     print metric
 
 
