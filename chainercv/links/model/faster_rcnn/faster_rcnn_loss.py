@@ -57,17 +57,20 @@ class FasterRCNNLoss(chainer.Chain):
 
         # RPN losses
 
-        n, _, hh, ww = out['rpn_bboxes'].shape
+        n = out['rpn_bboxes'].shape[0]
         # THIS IS SINGULAR, but ROI_* are not SINGULAR
-        rpn_bbox_target, rpn_label, rpn_bbox_inside_weight, \
+        rpn_gt_bbox, rpn_gt_label, rpn_bbox_inside_weight, \
             rpn_bbox_outside_weight = self.anchor_target_creator(
-                bbox, out['anchor'], (ww, hh), img_size)
-        rpn_labels = rpn_label.reshape((n, -1))
-        rpn_scores = out['rpn_scores'].reshape(1, 2, -1)
-        rpn_cls_loss = F.softmax_cross_entropy(rpn_scores, rpn_labels)
+                bbox, out['anchor'], img_size)
+        rpn_gt_labels = rpn_gt_label.reshape((n, -1))
+        rpn_scores = out['rpn_scores'].reshape(n, 2, -1)
+        rpn_cls_loss = F.softmax_cross_entropy(rpn_scores, rpn_gt_labels)
+        # (1, 4 A, H, W) --> (1, H, W, 4A) --> (1, H*W*A, 4)
+        rpn_bboxes = out['rpn_bboxes'].transpose(0, 2, 3, 1).reshape(n, -1, 4)
+        # THIS WILL NOT WORK
         rpn_bbox_loss = smooth_l1_loss(
-            out['rpn_bboxes'],
-            rpn_bbox_target[None],
+            rpn_bboxes,
+            rpn_gt_bbox[None],
             rpn_bbox_inside_weight[None],
             rpn_bbox_outside_weight[None],
             self.rpn_sigma)
