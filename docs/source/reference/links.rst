@@ -32,17 +32,17 @@ AnchorTargetCreator
    :members:
    :special-members:  __call__
 
-delta_decode
-""""""""""""
-.. autofunction:: chainercv.links.delta_decode
-
-delta_encode
-""""""""""""
-.. autofunction:: chainercv.links.delta_encode
+bbox2loc
+""""""""
+.. autofunction:: chainercv.links.bbox2loc
 
 generate_anchor_base
 """"""""""""""""""""
 .. autofunction:: chainercv.links.generate_anchor_base
+
+loc2bbox
+""""""""
+.. autofunction:: chainercv.links.loc2bbox
 
 ProposalCreator
 """""""""""""""
