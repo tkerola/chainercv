@@ -20,7 +20,7 @@ class FasterRCNNLoss(chainer.Chain):
         super(FasterRCNNLoss, self).__init__(faster_rcnn=faster_rcnn)
         self.rpn_sigma = rpn_sigma
         self.sigma = sigma
-        self.n_fg_class = faster_rcnn._n_class - 1
+        self.n_fg_class = faster_rcnn.n_fg_class
 
         # These parameters need to be consistent across modules
         proposal_target_creator_params.update({
@@ -49,9 +49,9 @@ class FasterRCNNLoss(chainer.Chain):
 
         img_size = imgs.shape[2:][::-1]
 
-        features = self.faster_rcnn.extractor(imgs, train=self.train)
+        features = self.faster_rcnn.extractor(imgs, test=not self.train)
         rpn_locs, rpn_scores, rois, roi_indices, anchor = self.faster_rcnn.rpn(
-            features, img_size, scale, train=self.train)
+            features, img_size, scale, test=not self.train)
 
         # since batch size is one, convert variables to singular form
         bbox = bboxes[0]
@@ -65,7 +65,7 @@ class FasterRCNNLoss(chainer.Chain):
             roi_loc_out_weight = self.proposal_target_creator(roi, bbox, label)
         sample_roi_index = self.xp.zeros((len(sample_roi),), dtype=np.int32)
         roi_cls_loc, roi_score = self.faster_rcnn.head(
-            features, sample_roi, sample_roi_index)
+            features, sample_roi, sample_roi_index, test=not self.train)
 
         # RPN losses
         gt_rpn_loc, gt_rpn_label, rpn_loc_in_weight, rpn_loc_out_weight =\
