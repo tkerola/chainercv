@@ -16,5 +16,5 @@ def smooth_l1_loss(x, t, inside_weights, outside_weights, sigma):
          (1 - flag) * (abs_diff - 0.5 / sigma2))
 
     y = y * outside_weights
-    y /= y.shape[0]
+    # y /= y.shape[0]
     return F.sum(y)

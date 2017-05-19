@@ -1,3 +1,5 @@
+from __future__ import division
+
 import matplotlib
 matplotlib.use('agg')
 import argparse
@@ -12,12 +14,10 @@ from chainercv.datasets import TransformDataset
 from chainercv.datasets import VOCDetectionDataset
 from chainercv import transforms
 
-from chainercv.links import FasterRCNNVGG16
 from chainercv.links import FasterRCNNLoss
+from chainercv.links import FasterRCNNVGG16
 
 from chainercv.datasets.pascal_voc.voc_utils import pascal_voc_labels
-
-from chainer.training.triggers.manual_schedule_trigger import ManualScheduleTrigger
 
 from merge_dataset import MergeDataset
 
@@ -83,7 +83,9 @@ def main():
         voc12 = VOCDetectionDataset(mode='trainval', year='2012')
         train_data = MergeDataset([voc07, voc12])
 
-    faster_rcnn = FasterRCNNVGG16(n_class=len(labels), score_thresh=0.05)
+    faster_rcnn = FasterRCNNVGG16(n_fg_class=len(labels) - 1,
+                                  pretrained_model='imagenet',
+                                  score_thresh=0.05)
     model = FasterRCNNLoss(faster_rcnn)
     if gpu >= 0:
         model.to_gpu(gpu)
@@ -95,8 +97,9 @@ def main():
     def transform(in_data):
         img, bbox, label = in_data
         _, H, W = img.shape
-        img, scale = faster_rcnn.prepare(img)
-        o_W, o_H = int(W * scale), int(H * scale)
+        img = faster_rcnn.prepare(img)
+        _, o_H, o_W = img.shape
+        scale = o_H / H
         bbox = transforms.resize_bbox(bbox, (W, H), (o_W, o_H))
 
         # horizontally flip
@@ -114,8 +117,9 @@ def main():
 
     trainer = training.Trainer(updater, (iteration, 'iteration'), out=out)
 
-    trainer.extend(extensions.snapshot_object(
-        model.faster_rcnn, 'snapshot_model.npz'), trigger=(iteration, 'iteration'))
+    trainer.extend(
+        extensions.snapshot_object(model.faster_rcnn, 'snapshot_model.npz'),
+        trigger=(iteration, 'iteration'))
     trainer.extend(extensions.ExponentialShift('lr', 0.1),
                    trigger=(step_size, 'iteration'))
 
@@ -132,9 +136,9 @@ def main():
     trainer.extend(extensions.PrintReport(
         ['iteration', 'epoch', 'elapsed_time', 'lr',
          'main/loss',
-         'main/bbox_loss',
+         'main/loc_loss',
          'main/cls_loss',
-         'main/rpn_bbox_loss',
+         'main/rpn_loc_loss',
          'main/rpn_cls_loss',
          'map'
          ]), trigger=print_interval)

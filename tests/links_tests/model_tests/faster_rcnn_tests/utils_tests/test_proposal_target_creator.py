@@ -23,9 +23,9 @@ def _generate_bbox(n, img_size, min_length, max_length):
 class TestProposalTargetCreator(unittest.TestCase):
 
     batch_size = 128
-    n_class = 21
+    n_fg_class = 21
     fg_fraction = 0.25
-    bbox_inside_weight = (0.7, 0.8, 0.9, 1.)
+    loc_inside_weight = (0.7, 0.8, 0.9, 1.)
 
     def setUp(self):
 
@@ -34,19 +34,19 @@ class TestProposalTargetCreator(unittest.TestCase):
         self.roi = _generate_bbox(n_roi, (392, 512), 16, 250)
         self.bbox = _generate_bbox(n_bbox, (392, 512), 16, 250)
         self.label = np.random.randint(
-            0, self.n_class, size=(n_bbox,), dtype=np.int32)
+            0, self.n_fg_class + 1, size=(n_bbox,), dtype=np.int32)
 
         self.proposal_target_creator = ProposalTargetCreator(
-            n_class=self.n_class,
+            n_fg_class=self.n_fg_class,
             batch_size=self.batch_size,
             fg_fraction=self.fg_fraction,
-            bbox_inside_weight=self.bbox_inside_weight,
+            loc_inside_weight=self.loc_inside_weight,
         )
 
     def check_proposal_target_creator(
             self, bbox, label, roi, proposal_target_creator):
         xp = cuda.get_array_module(roi)
-        (sample_roi, roi_bbox_target, roi_gt_label, roi_bbox_inside_weight,
+        (sample_roi, roi_bbox_target, roi_gt_label, roi_loc_inside_weight,
          roi_bbox_outside_weight) =\
             proposal_target_creator(roi, bbox, label)
 
@@ -54,26 +54,26 @@ class TestProposalTargetCreator(unittest.TestCase):
         self.assertIsInstance(sample_roi, xp.ndarray)
         self.assertIsInstance(roi_bbox_target, xp.ndarray)
         self.assertIsInstance(roi_gt_label, xp.ndarray)
-        self.assertIsInstance(roi_bbox_inside_weight, xp.ndarray)
+        self.assertIsInstance(roi_loc_inside_weight, xp.ndarray)
         self.assertIsInstance(roi_bbox_outside_weight, xp.ndarray)
 
         sample_roi = cuda.to_cpu(sample_roi)
         roi_bbox_target = cuda.to_cpu(roi_bbox_target)
         roi_gt_label = cuda.to_cpu(roi_gt_label)
-        roi_bbox_inside_weight = cuda.to_cpu(roi_bbox_inside_weight)
+        roi_loc_inside_weight = cuda.to_cpu(roi_loc_inside_weight)
         roi_bbox_outside_weight = cuda.to_cpu(roi_bbox_outside_weight)
 
         # Test shapes
         self.assertEqual(sample_roi.shape,
                          (self.batch_size, 4))
         self.assertEqual(roi_bbox_target.shape,
-                         (self.batch_size, 4 * self.n_class))
+                         (self.batch_size, 4 * (self.n_fg_class + 1)))
         self.assertEqual(roi_gt_label.shape,
                          (self.batch_size,))
-        self.assertEqual(roi_bbox_inside_weight.shape,
-                         (self.batch_size, 4 * self.n_class))
+        self.assertEqual(roi_loc_inside_weight.shape,
+                         (self.batch_size, 4 * (self.n_fg_class + 1)))
         self.assertEqual(roi_bbox_outside_weight.shape,
-                         (self.batch_size, 4 * self.n_class))
+                         (self.batch_size, 4 * (self.n_fg_class + 1)))
 
         # Test foreground and background labels
         np.testing.assert_equal(
@@ -85,17 +85,17 @@ class TestProposalTargetCreator(unittest.TestCase):
             n_fg, self.batch_size * self.fg_fraction)
         self.assertLessEqual(n_bg, self.batch_size - n_fg)
 
-        # Test roi_bbox_inside_weight and bbox_outside_weight
+        # Test roi_loc_inside_weight and bbox_outside_weight
         box_index_0 = np.where(roi_gt_label >= 1)[0][0]
         index_0 = (
             box_index_0,
             slice(4 * roi_gt_label[box_index_0],
                   4 * roi_gt_label[box_index_0] + 4))
-        bbox_inside_00 = roi_bbox_inside_weight[index_0]
+        bbox_inside_00 = roi_loc_inside_weight[index_0]
         bbox_outside_00 = roi_bbox_outside_weight[index_0]
         np.testing.assert_equal(
             bbox_inside_00,
-            np.array(self.bbox_inside_weight, dtype=np.float32))
+            np.array(self.loc_inside_weight, dtype=np.float32))
         np.testing.assert_equal(
             bbox_outside_00,
             np.array((1, 1, 1, 1), dtype=np.float32))

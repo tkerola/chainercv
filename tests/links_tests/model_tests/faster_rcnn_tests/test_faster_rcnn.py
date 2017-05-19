@@ -181,13 +181,15 @@ class TestFasterRCNNLoss(unittest.TestCase):
     def setUp(self):
         self.n_anchor = 6
         self.feat_stride = 4
-        self.n_class = 4
+        self.n_fg_class = 3
         self.n_roi = 24
         self.link = FasterRCNNLoss(DummyFasterRCNN(
             n_anchor=self.n_anchor,
             feat_stride=self.feat_stride,
-            n_class=self.n_class,
-            n_roi=self.n_roi
+            n_fg_class=self.n_fg_class,
+            n_roi=self.n_roi,
+            min_size=600,
+            max_size=800,
         ))
 
     def check_call(self):
@@ -198,7 +200,7 @@ class TestFasterRCNNLoss(unittest.TestCase):
         bboxes = chainer.Variable(
             _generate_bbox(xp, n_bbox, (600, 800), 16, 350)[None])
         labels = chainer.Variable(
-            xp.random.randint(0, self.n_class, size=(n_bbox,))[None])
+            xp.random.randint(0, self.n_fg_class + 1, size=(n_bbox,))[None])
         scale = chainer.Variable(xp.array(1.))
         loss = self.link(imgs, bboxes, labels, scale)
         self.assertEqual(loss.shape, ())

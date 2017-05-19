@@ -256,7 +256,7 @@ class VGG16FeatureExtractor(chainer.Chain):
             ('conv5_3', [self.conv5_3, _relu]),
         ])
 
-    def __call__(self, x, train=False):
+    def __call__(self, x, test=True):
         h = x
         for key, funcs in self.functions.items():
             for func in funcs:
