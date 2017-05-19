@@ -197,7 +197,7 @@ class VGG16RoIPoolingHead(chainer.Chain):
         self.roi_size = roi_size
         self.spatial_scale = spatial_scale
 
-    def __call__(self, x, rois, roi_indices, train=False):
+    def __call__(self, x, rois, roi_indices, test=True):
         roi_indices = roi_indices.astype(np.float32)
         rois = self.xp.concatenate(
             (roi_indices[:, None], rois), axis=1)
