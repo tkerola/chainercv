@@ -37,16 +37,16 @@ class TestRegionProposalNetwork(unittest.TestCase):
 
     def _check_call(self, x, img_size, train):
         _, _, H, W = x.shape
-        rpn_locs, rpn_cls_probs, rois, batch_indices, anchor = self.link(
+        rpn_locs, rpn_scores, rois, roi_indices, anchor = self.link(
             chainer.Variable(x), img_size, train=train)
         self.assertIsInstance(rpn_locs, chainer.Variable)
         self.assertIsInstance(rpn_locs.data, type(x))
-        self.assertIsInstance(rpn_cls_probs, chainer.Variable)
-        self.assertIsInstance(rpn_cls_probs.data, type(x))
+        self.assertIsInstance(rpn_scores, chainer.Variable)
+        self.assertIsInstance(rpn_scores.data, type(x))
 
         A = len(self.ratios) * len(self.anchor_scales)
-        self.assertEqual(rpn_locs.shape, (self.B, A * 4, H, W))
-        self.assertEqual(rpn_cls_probs.shape, (self.B, A * 2, H, W))
+        self.assertEqual(rpn_locs.shape, (self.B, H * W * A, 4))
+        self.assertEqual(rpn_scores.shape, (self.B, H * W * A, 2))
 
         if train:
             roi_size = self.proposal_creator_params[
@@ -55,16 +55,16 @@ class TestRegionProposalNetwork(unittest.TestCase):
             roi_size = self.proposal_creator_params[
                 'n_test_post_nms']
         self.assertIsInstance(rois, type(x))
-        self.assertIsInstance(batch_indices, type(x))
+        self.assertIsInstance(roi_indices, type(x))
         self.assertLessEqual(rois.shape[0], self.B * roi_size)
-        self.assertLessEqual(batch_indices.shape[0], self.B * roi_size)
+        self.assertLessEqual(roi_indices.shape[0], self.B * roi_size)
 
         # Depending randomly generated bounding boxes, this is not true.
-        if batch_indices.shape[0] == self.B * roi_size:
+        if roi_indices.shape[0] == self.B * roi_size:
             for i in range(self.B):
                 s = slice(i * roi_size, (i + 1) * roi_size)
                 np.testing.assert_equal(
-                    cuda.to_cpu(batch_indices[s]),
+                    cuda.to_cpu(roi_indices[s]),
                     i * np.ones((roi_size,), dtype=np.int32))
 
         self.assertIsInstance(anchor, type(x))

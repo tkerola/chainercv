@@ -18,6 +18,7 @@ urls = {
     'voc07': 'https://github.com/yuyu2172/share-weights/releases/'
     'download/0.0.1/faster_rcnn_vgg_voc07.npz'
 }
+n_fg_classes = {'voc07': 20}
 
 
 def _relu(x):
@@ -47,8 +48,16 @@ class FasterRCNNVGG16(FasterRCNNBase):
     For descriptions on the interface of this model, please refer to
     :class:`chainercv.links.FasterRCNNBase`.
 
+    :obj:`FasterRCNNVGG16` supports finer control on random initialization of
+    weights by arguments
+    :obj:`vgg_initialW`, :obj:`rpn_initialW`, :obj:`loc_initialW` and
+    :obj:`score_initialW`.
+    It accepts a callable that takes an array and edits its values.
+    If :obj:`None` is passed as an initializer, the default initializer is
+    used.
+
     Args:
-        n_class (int): The number of classes. This counts the background.
+        n_fg_class (int): The number of classes excluding the background.
         pretrained_model (str): the destination of the pre-trained
             chainer model serialized as a :obj:`.npz` file.
             If this argument is specified as in one of the strings described
@@ -69,6 +78,12 @@ class FasterRCNNVGG16(FasterRCNNBase):
             of possibly generated anchors. Those areas will be square of an
             element in :obj:`scales` times the original area of the
             reference window.
+        vgg_initialW (callable): Initializer for the layers corresponding to
+            VGG16 layers.
+        rpn_initialW (callable): Initializer for Region Proposal Network
+            layers.
+        loc_initialW (callable): Initializer for the localization head.
+        score_initialW (callable): Initializer for the score head.
         proposal_creator_params (dict): Key valued paramters for
             :obj:`chainercv.links.ProposalCreator`.
 
@@ -77,7 +92,7 @@ class FasterRCNNVGG16(FasterRCNNBase):
     feat_stride = 16
 
     def __init__(self,
-                 n_class,
+                 n_fg_class=None,
                  pretrained_model='voc07',
                  nms_thresh=0.3, score_thresh=0.7,
                  min_size=600, max_size=1000,
@@ -86,17 +101,22 @@ class FasterRCNNVGG16(FasterRCNNBase):
                  loc_initialW=None, score_initialW=None,
                  proposal_creator_params={}
                  ):
+        if n_fg_class is None:
+            if pretrained_model not in n_fg_classes:
+                raise ValueError(
+                    'The n_fg_class needs to be supplied as an argument')
+            n_fg_class = n_fg_classes[pretrained_model]
+
         if loc_initialW is None:
             loc_initialW = chainer.initializers.Normal(0.001)
         if score_initialW is None:
             score_initialW = chainer.initializers.Normal(0.01)
         if rpn_initialW is None:
             rpn_initialW = chainer.initializers.Normal(0.01)
-
         if vgg_initialW is None and pretrained_model:
             vgg_initialW = chainer.initializers.constant.Zero()
 
-        feature = VGG16FeatureExtractor(initialW=vgg_initialW)
+        extractor = VGG16FeatureExtractor(initialW=vgg_initialW)
         rpn = RegionProposalNetwork(
             512, 512,
             ratios=ratios,
@@ -106,7 +126,7 @@ class FasterRCNNVGG16(FasterRCNNBase):
             proposal_creator_params=proposal_creator_params,
         )
         head = VGG16RoIPoolingHead(
-            n_class,
+            n_fg_class + 1,
             roi_size=7, spatial_scale=1. / self.feat_stride,
             vgg_initialW=vgg_initialW,
             loc_initialW=loc_initialW,
@@ -114,10 +134,10 @@ class FasterRCNNVGG16(FasterRCNNBase):
         )
 
         super(FasterRCNNVGG16, self).__init__(
-            feature,
+            extractor,
             rpn,
             head,
-            n_class=n_class,
+            n_fg_class=n_fg_class,
             mean=np.array([102.9801, 115.9465, 122.7717],
                           dtype=np.float32)[:, None, None],
             nms_thresh=nms_thresh,
@@ -142,19 +162,19 @@ class FasterRCNNVGG16(FasterRCNNBase):
 
     def _copy_imagenet_pretrained_vgg16(self):
         pretrained_model = VGG16Layers()
-        self.feature.conv1_1.copyparams(pretrained_model.conv1_1)
-        self.feature.conv1_2.copyparams(pretrained_model.conv1_2)
-        self.feature.conv2_1.copyparams(pretrained_model.conv2_1)
-        self.feature.conv2_2.copyparams(pretrained_model.conv2_2)
-        self.feature.conv3_1.copyparams(pretrained_model.conv3_1)
-        self.feature.conv3_2.copyparams(pretrained_model.conv3_2)
-        self.feature.conv3_3.copyparams(pretrained_model.conv3_3)
-        self.feature.conv4_1.copyparams(pretrained_model.conv4_1)
-        self.feature.conv4_2.copyparams(pretrained_model.conv4_2)
-        self.feature.conv4_3.copyparams(pretrained_model.conv4_3)
-        self.feature.conv5_1.copyparams(pretrained_model.conv5_1)
-        self.feature.conv5_2.copyparams(pretrained_model.conv5_2)
-        self.feature.conv5_3.copyparams(pretrained_model.conv5_3)
+        self.extractor.conv1_1.copyparams(pretrained_model.conv1_1)
+        self.extractor.conv1_2.copyparams(pretrained_model.conv1_2)
+        self.extractor.conv2_1.copyparams(pretrained_model.conv2_1)
+        self.extractor.conv2_2.copyparams(pretrained_model.conv2_2)
+        self.extractor.conv3_1.copyparams(pretrained_model.conv3_1)
+        self.extractor.conv3_2.copyparams(pretrained_model.conv3_2)
+        self.extractor.conv3_3.copyparams(pretrained_model.conv3_3)
+        self.extractor.conv4_1.copyparams(pretrained_model.conv4_1)
+        self.extractor.conv4_2.copyparams(pretrained_model.conv4_2)
+        self.extractor.conv4_3.copyparams(pretrained_model.conv4_3)
+        self.extractor.conv5_1.copyparams(pretrained_model.conv5_1)
+        self.extractor.conv5_2.copyparams(pretrained_model.conv5_2)
+        self.extractor.conv5_3.copyparams(pretrained_model.conv5_3)
         self.head.fc6.copyparams(pretrained_model.fc6)
         self.head.fc7.copyparams(pretrained_model.fc7)
 
@@ -167,28 +187,28 @@ class VGG16RoIPoolingHead(chainer.Chain):
 
     def __init__(self, n_class, roi_size, spatial_scale,
                  vgg_initialW=None, loc_initialW=None, score_initialW=None):
+        # n_class includes the background
         super(VGG16RoIPoolingHead, self).__init__(
             fc6=L.Linear(25088, 4096, initialW=vgg_initialW),
             fc7=L.Linear(4096, 4096, initialW=vgg_initialW),
-            loc=L.Linear(4096, n_class * 4, initialW=loc_initialW),
+            cls_loc=L.Linear(4096, n_class * 4, initialW=loc_initialW),
             score=L.Linear(4096, n_class, initialW=score_initialW)
         )
         self.roi_size = roi_size
         self.spatial_scale = spatial_scale
 
-    def __call__(self, x, rois, batch_indices, train=False):
-        batch_indices = batch_indices.astype(np.float32)
+    def __call__(self, x, rois, roi_indices, train=False):
+        roi_indices = roi_indices.astype(np.float32)
         rois = self.xp.concatenate(
-            (batch_indices[:, None], rois), axis=1)
+            (roi_indices[:, None], rois), axis=1)
         pool = F.roi_pooling_2d(
             x, rois, self.roi_size, self.roi_size, self.spatial_scale)
 
         fc6 = F.dropout(_relu(self.fc6(pool)), train=False)
         fc7 = F.dropout(_relu(self.fc7(fc6)), train=False)
-        roi_locs = self.loc(fc7)
+        roi_cls_locs = self.cls_loc(fc7)
         roi_scores = self.score(fc7)
-
-        return roi_locs, roi_scores
+        return roi_cls_locs, roi_scores
 
 
 def _relu(x):
