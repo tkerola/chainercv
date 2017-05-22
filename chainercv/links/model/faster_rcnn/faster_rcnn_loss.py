@@ -85,7 +85,7 @@ class FasterRCNNLoss(chainer.Chain):
         loc_loss = smooth_l1_loss(
             roi_cls_loc, gt_roi_cls_loc,
             roi_loc_in_weight, roi_loc_out_weight, self.sigma)
-        loc_loss /= len(roi_cls_loc)
+        loc_loss /= roi_cls_loc.shape[0]
 
         loss = rpn_loc_loss + rpn_cls_loss + loc_loss + cls_loss
         chainer.reporter.report({'rpn_loc_loss': rpn_loc_loss,
