@@ -13,6 +13,10 @@ from chainercv.links.model.faster_rcnn.utils.proposal_target_creator import \
 
 class FasterRCNNLoss(chainer.Chain):
 
+    """Loss for Faster RCNN.
+
+    """
+
     def __init__(self, faster_rcnn, rpn_sigma=3., sigma=1.,
                  anchor_target_creator_params={},
                  proposal_target_creator_params={},

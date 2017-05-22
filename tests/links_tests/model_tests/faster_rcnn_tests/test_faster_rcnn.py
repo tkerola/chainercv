@@ -5,8 +5,8 @@ import chainer
 from chainer import testing
 from chainer.testing import attr
 
-from chainercv.links import FasterRCNNBase
-from chainercv.links import FasterRCNNLoss
+from chainercv.links.model.faster_rcnn import FasterRCNNBase
+from chainercv.links.model.faster_rcnn import FasterRCNNLoss
 
 
 def _random_array(xp, shape):
@@ -70,7 +70,7 @@ class DummyRegionProposalNetwork(chainer.Chain):
         n_anchor = self.n_anchor_base * H * W
 
         rpn_locs = _random_array(self.xp, (B, n_anchor, 4))
-        rpn_cls_scores = _random_array(self.xp, (B, n_anchor))
+        rpn_cls_scores = _random_array(self.xp, (B, n_anchor, 2))
         rois = _generate_bbox(
             self.xp, self.n_roi, img_size[::-1], 16, min(img_size))
         roi_indices = self.xp.zeros((len(rois),), dtype=np.int32)
@@ -179,12 +179,12 @@ class TestFasterRCNNBase(unittest.TestCase):
 class TestFasterRCNNLoss(unittest.TestCase):
 
     def setUp(self):
-        self.n_anchor = 6
+        self.n_anchor_base = 6
         self.feat_stride = 4
         self.n_fg_class = 3
         self.n_roi = 24
         self.link = FasterRCNNLoss(DummyFasterRCNN(
-            n_anchor=self.n_anchor,
+            n_anchor_base=self.n_anchor_base,
             feat_stride=self.feat_stride,
             n_fg_class=self.n_fg_class,
             n_roi=self.n_roi,
@@ -199,8 +199,8 @@ class TestFasterRCNNLoss(unittest.TestCase):
         imgs = chainer.Variable(_random_array(xp, (1, 3, 600, 800)))
         bboxes = chainer.Variable(
             _generate_bbox(xp, n_bbox, (600, 800), 16, 350)[None])
-        labels = chainer.Variable(
-            xp.random.randint(0, self.n_fg_class + 1, size=(n_bbox,))[None])
+        labels = xp.random.randint(0, self.n_fg_class + 1, size=(n_bbox,))
+        labels = chainer.Variable(labels[None].astype(np.int32))
         scale = chainer.Variable(xp.array(1.))
         loss = self.link(imgs, bboxes, labels, scale)
         self.assertEqual(loss.shape, ())

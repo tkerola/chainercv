@@ -7,7 +7,7 @@ from chainer import testing
 from chainer.testing import attr
 from chainer import utils
 
-from chainercv.links import AnchorTargetCreator
+from chainercv.links.model.faster_rcnn import AnchorTargetCreator
 
 
 def _generate_bbox(n, img_size, min_length, max_length):
