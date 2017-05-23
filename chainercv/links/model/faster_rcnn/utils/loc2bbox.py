@@ -6,7 +6,7 @@ def loc2bbox(src_bbox, loc):
 
     Given bounding box offsets and scales computed by
     :meth:`bbox2loc`, this function decodes the representation to
-    coordinates in 2D image space.
+    coordinates in 2D image coordinates.
 
     Given scales and offsets :math:`t_x, t_y, t_w, t_h` and a bounding
     box whose center is :math:`p_x, p_y` and size :math:`p_w, p_h`,
@@ -19,13 +19,13 @@ def loc2bbox(src_bbox, loc):
     * :math:`\\hat{g}_w = p_w \\exp(t_w)`
     * :math:`\\hat{g}_h = p_h \\exp(t_h)`
 
-    The decoding formulas are used in works such as R-CNN [1].
-
-    .. [1] Ross Girshick, Jeff Donahue, Trevor Darrell, Jitendra Malik. \
-    Rich feature hierarchies for accurate object detection and semantic \
-    segmentation. CVPR 2014.
+    The decoding formulas are used in works such as R-CNN [#]_.
 
     The output is same type as the type of the inputs.
+
+    .. [#] Ross Girshick, Jeff Donahue, Trevor Darrell, Jitendra Malik. \
+    Rich feature hierarchies for accurate object detection and semantic \
+    segmentation. CVPR 2014.
 
     Args:
         src_bbox (array): A coordinates of bounding boxes.

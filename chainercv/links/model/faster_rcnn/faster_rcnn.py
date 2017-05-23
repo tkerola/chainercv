@@ -30,56 +30,54 @@ from chainercv.utils import non_maximum_suppression
 from chainercv.transforms.image.resize import resize
 
 
-class FasterRCNNBase(chainer.Chain):
+class FasterRCNN(chainer.Chain):
 
     """Base class for Faster R-CNN.
 
-    This is a base class for Faster R-CNN [1].
-    The following three stages constitute Faster R-CNN.
+    This is a base class for Faster R-CNN links supporting object detection
+    API [#]_. The following three stages constitute Faster R-CNN.
 
     1. **Feature extraction**: Images are taken and their \
         feature maps are calculated.
     2. **Region Proposal Networks**: Given the feature maps calculated in \
         the previous stage, produce set of RoIs around objects.
-    3. **Localization and Classification Heads**: Using features that belong \
-        to the proposed RoIs, classify the categories of the objects in the \
-        RoIs and improve localizations.
+    3. **Localization and Classification Heads**: Using feature maps that \
+        belong to the proposed RoIs, classify the categories of the objects \
+        in the RoIs and improve localizations.
 
     Each stage is carried out by one of the callable
     :class:`chainer.Chain` objects :obj:`feature`, :obj:`rpn` and :obj:`head`.
 
-    There are two functions :func:`predict` and :func:`__call__` to conduct
+    There are two functions :meth:`predict` and :meth:`__call__` to conduct
     object detection.
-    :func:`predict` takes images and returns bounding boxes that are converted
+    :meth:`predict` takes images and returns bounding boxes that are converted
     to image coordinates. This will be useful for a scenario when
     Faster R-CNN is treated as a black box function, for instance.
-    Internally, image preprocessing is carried out.
-    :func:`__call__` is provided for a scnerario when intermediate outputs
-    are needed, for instance in training and debugging.
+    :meth:`__call__` is provided for a scnerario when intermediate outputs
+    are needed, for instance, for training and debugging.
 
-    .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
+    Links that support obejct detection API have method :meth:`predict` with
+    the same interface. Please refer to :func:`FasterRCNN.predict` for
+    further details.
+
+    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
 
     Args:
-        extractor (callable Chain): A callable that takes BCHW image
-            array and option :obj:`train` as arguments, and returns a BCHW
-            feature.
-        rpn (callable Chain): A callable that has same interface as
+        extractor (callable Chain): A callable that takes a BCHW image
+            array and returns feature maps.
+        rpn (callable Chain): A callable that has the same interface as
             :class:`chainercv.links.RegionProposalNetwork`. Please refer to
             the documentation found there.
-        head (callable Chain): A callable that takes tuple of
-            BCHW array, RoIs and batch indices for RoIs. This returns class
+        head (callable Chain): A callable that takes
+            a BCHW array, RoIs and batch indices for RoIs. This returns class
             dependent localization paramters and class scores.
-        n_fg_class (int): The number of classes excluding the background.
         mean (numpy.ndarray): A value to be subtracted from an image
-            in :func:`prepare`.
-        nms_thresh (float): Threshold value used when calling non maximum
-            suppression in :func:`predict`.
-        score_thresh (float): Threshold value used to discard low
-            confidence proposals in :func:`predict`.
-        min_size (int): A preprocessing paramter for :func:`prepare`.
-        max_size (int): A preprocessing paramter for :func:`prepare`.
+            in :meth:`prepare`.
+        min_size (int): A preprocessing paramter for :meth:`prepare`. Please
+            refer to a docstring found for :meth:`prepare`.
+        max_size (int): A preprocessing paramter for :meth:`prepare`.
         loc_normalize_mean (tuple of four floats): Mean values of
             localization estimates.
         loc_normalize_std (tupler of four floats): Standard deviation
@@ -89,27 +87,29 @@ class FasterRCNNBase(chainer.Chain):
 
     def __init__(
             self, extractor, rpn, head,
-            n_fg_class, mean,
-            nms_thresh=0.3,
-            score_thresh=0.7,
+            mean,
             min_size=600,
             max_size=1000,
             loc_normalize_mean=(0., 0., 0., 0.),
             loc_normalize_std=(0.1, 0.1, 0.2, 0.2),
     ):
-        super(FasterRCNNBase, self).__init__(
+        super(FasterRCNN, self).__init__(
             extractor=extractor,
             rpn=rpn,
             head=head,
         )
-        self.n_fg_class = n_fg_class
         self.mean = mean
-        self.nms_thresh = nms_thresh
-        self.score_thresh = score_thresh
         self.min_size = min_size
         self.max_size = max_size
         self.loc_normalize_mean = loc_normalize_mean
         self.loc_normalize_std = loc_normalize_std
+
+        self.use_preset('visualize')
+
+    @property
+    def n_class(self):
+        # Total number of classes including the background.
+        return self.head.n_class
 
     def __call__(self, x, scale=1., test=True):
         """Forward Faster R-CNN.
@@ -121,7 +121,9 @@ class FasterRCNNBase(chainer.Chain):
         Here are notations used.
 
         * :math:`N` is the number of batch size
-        * :math:`R'` is the total number of RoIs produced across batches.
+        * :math:`R'` is the total number of RoIs produced across batches. \
+            Given :math:`R_i` proposed RoIs from the :math:`i` th image, \
+            :math:`R' = \\sum _{i=1} ^ N R_i`.
         * :math:`L` is the number of classes excluding the background.
 
         Classes are ordered by the background, the first class, ..., and
@@ -130,20 +132,18 @@ class FasterRCNNBase(chainer.Chain):
         Args:
             x (~chainer.Variable): 4D image variable.
             scale (float): Amount of scaling applied to the raw image
-                in preprocessing.
-            layers (list of str): The list of the names of the values to be
-                collected.
-            test (bool): If :obj:`True`, test time behavior is used.
+                during preprocessing.
+            test (bool): If :obj:`True`, the test time behavior is used.
 
         Returns:
             Variable, Variable, array, array:
             Returns tuple of four values listed below.
 
-            * **roi_cls_locs**: Bounding box offsets for RoIs. \
+            * **roi_cls_locs**: Offsets and scalings for the proposed RoIs. \
                 Its shape is :math:`(R', (L + 1) \\times 4)`.
-            * **roi_scores**: Class predictions for RoIs. \
+            * **roi_scores**: Class predictions for the proposed RoIs. \
                 Its shape is :math:`(R', L + 1)`.
-            * **rois**: RoIs produced by RPN. Its shape is \
+            * **rois**: RoIs proposed by RPN. Its shape is \
                 :math:`(R', 4)`.
             * **roi_indices**: Batch indices of RoIs. Its shape is \
                 :math:`(R',)`.
@@ -158,13 +158,74 @@ class FasterRCNNBase(chainer.Chain):
             h, rois, roi_indices, test=test)
         return roi_cls_locs, roi_scores, rois, roi_indices
 
+    def use_preset(self, preset):
+        """Use the given preset during prediction.
+
+        This method changes values of :obj:`self.nms_thresh` and
+        :obj:`self.score_thresh`. These values are a threshold value
+        used for non maximum suppression and a threshold value
+        to discard low confidence proposals in :meth:`predict`,
+        respectively.
+
+        If the attributes need to be changed to something
+        other than the values provided in the presets, please modify
+        them by directly accessing the public attributes.
+
+        Args:
+            preset ({'visualize', 'evaluate'): A string to determine the
+                preset to use.
+
+        """
+        if preset == 'visualize':
+            self.nms_thresh = 0.3
+            self.score_thresh = 0.7
+        elif preset == 'evaluate':
+            self.nms_thresh = 0.3
+            self.score_thresh = 0.05
+        else:
+            raise ValueError('preset must be visualize or evaluate')
+
+    def prepare(self, img):
+        """Preprocess an image for feature extraction.
+
+        The length of the shorter edge is scaled to :obj:`self.min_size`.
+        After the scaling, if the length of the longer edge is longer than
+        :obj:`self.max_size`, the image is scaled to fit the longer edge
+        to :obj:`self.max_size`.
+
+        After resizing the image, the image is subtracted by a mean image value
+        :obj:`self.mean`.
+
+        Args:
+            img (~numpy.ndarray): An image. This is in CHW and BGR format.
+                The range of its value is :math:`[0, 255]`.
+
+        Returns:
+            ~numpy.ndarray:
+            A preprocessed image.
+
+        """
+        _, H, W = img.shape
+
+        scale = 1.
+
+        scale = self.min_size / min(H, W)
+
+        if scale * max(H, W) > self.max_size:
+            scale = self.max_size / max(H, W)
+
+        img = resize(img, (int(W * scale), int(H * scale)))
+
+        img = (img - self.mean).astype(np.float32, copy=False)
+        return img
+
     def _suppress(self, raw_cls_bbox, raw_prob):
         bbox = list()
         label = list()
         score = list()
         # skip cls_id = 0 because it is the background class
-        for l in range(1, self.n_fg_class + 1):
-            cls_bbox_l = raw_cls_bbox[:, l * 4: (l + 1) * 4]
+        for l in range(1, self.n_class):
+            cls_bbox_l = raw_cls_bbox.reshape(-1, self.n_class, 4)[:, l, :]
             prob_l = raw_prob[:, l]
             mask = prob_l > self.score_thresh
             cls_bbox_l = cls_bbox_l[mask]
@@ -172,7 +233,8 @@ class FasterRCNNBase(chainer.Chain):
             keep = non_maximum_suppression(
                 cls_bbox_l, self.nms_thresh, prob_l)
             bbox.append(cls_bbox_l[keep])
-            label.append(l * np.ones((len(keep),)))
+            # The labels are in [0, self.n_class - 2].
+            label.append((l - 1) * np.ones((len(keep),)))
             score.append(prob_l[keep])
         bbox = np.concatenate(bbox, axis=0).astype(np.float32)
         label = np.concatenate(label, axis=0).astype(np.int32)
@@ -201,7 +263,7 @@ class FasterRCNNBase(chainer.Chain):
                in the second axis.
            * **labels** : A list of integer arrays of shape :math:`(R,)`. \
                Each value indicates the class of the bounding box. \
-               Values are in range :math:`[1, L]`, where :math:`L` is the \
+               Values are in range :math:`[0, L - 1]`, where :math:`L` is the \
                number of the foreground classes.
            * **scores** : A list of float arrays of shape :math:`(R,)`. \
                Each value indicates how confident the prediction is.
@@ -233,14 +295,14 @@ class FasterRCNNBase(chainer.Chain):
             # Convert predictions to bounding boxes in image coordinates.
             # Bounding boxes are scaled to the scale of the input images.
             mean = self.xp.tile(self.xp.asarray(self.loc_normalize_mean),
-                                self.n_fg_class + 1)
+                                self.n_class)
             std = self.xp.tile(self.xp.asarray(self.loc_normalize_std),
-                               self.n_fg_class + 1)
+                               self.n_class)
             roi_cls_loc = (roi_cls_loc * std + mean).astype(np.float32)
-            roi_cls_loc = roi_cls_loc.reshape(-1, self.n_fg_class + 1, 4)
+            roi_cls_loc = roi_cls_loc.reshape(-1, self.n_class, 4)
             roi = self.xp.broadcast_to(roi[:, None], roi_cls_loc.shape)
             cls_bbox = loc2bbox(roi.reshape(-1, 4), roi_cls_loc.reshape(-1, 4))
-            cls_bbox = cls_bbox.reshape(-1, (self.n_fg_class + 1) * 4)
+            cls_bbox = cls_bbox.reshape(-1, self.n_class * 4)
             # clip bounding box
             cls_bbox[:, slice(0, 4, 2)] = self.xp.clip(
                 cls_bbox[:, slice(0, 4, 2)], 0, W / scale)
@@ -258,37 +320,3 @@ class FasterRCNNBase(chainer.Chain):
             scores.append(score)
 
         return bboxes, labels, scores
-
-    def prepare(self, img):
-        """Preprocess an image for feature extraction.
-
-        The length of the shorter edge is scaled to :obj:`self.min_size`.
-        After that, if the length of the longer edge is longer than
-        :obj:`self.max_size`, the image is scaled to fit the longer edge
-        to :obj:`self.max_size`.
-
-        After resizing, image is subtracted by a mean image value
-        :obj:`self.mean`.
-
-        Args:
-            img (~numpy.ndarray): An image. This is in CHW and BGR format.
-                The range of its value is :math:`[0, 255]`.
-
-        Returns:
-            ~numpy.ndarray:
-            A preprocessed image.
-
-        """
-        _, H, W = img.shape
-
-        scale = 1.
-
-        scale = self.min_size / min(H, W)
-
-        if scale * max(H, W) > self.max_size:
-            scale = self.max_size / max(H, W)
-
-        img = resize(img, (int(W * scale), int(H * scale)))
-
-        img = (img - self.mean).astype(np.float32, copy=False)
-        return img

@@ -1,12 +1,12 @@
-Faster RCNN
-===========
+Faster R-CNN
+============
 
 .. module:: chainercv.links.model.faster_rcnn
 
 
-FasterRCNNBase
---------------
-.. autoclass:: FasterRCNNBase
+FasterRCNN
+----------
+.. autoclass:: FasterRCNN
    :members:
    :special-members:  __call__
 
@@ -22,9 +22,9 @@ VGG16FeatureExtractor
 ---------------------
 .. autoclass:: VGG16FeatureExtractor
 
-VGG16RoIPoolingHead
--------------------
-.. autoclass:: VGG16RoIPoolingHead
+VGG16RoIHead
+------------
+.. autoclass:: VGG16RoIHead
 
 
 RegionProposalNetwork

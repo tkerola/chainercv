@@ -2,10 +2,10 @@ from chainer import cuda
 
 
 def bbox2loc(src_bbox, dst_bbox):
-    """Encodes bboxes into offsets and scales of the base bboxes.
+    """Encodes the source and the destination bounding boxes to "loc".
 
-    Given bounding boxes, this function computes offsets and scales (loc)
-    to match the boxes to the target boxes.
+    Given bounding boxes, this function computes offsets and scales
+    to match the source bounding boxes to the target bounding boxes.
     Mathematcially, given a bounding box whose center is :math:`p_x, p_y` and
     size :math:`p_w, p_h` and the target bounding box whose center is
     :math:`g_x, g_y` and size :math:`g_w, g_h`, the offsets and scales
@@ -17,9 +17,9 @@ def bbox2loc(src_bbox, dst_bbox):
     * :math:`t_h = \\log(\\frac{g_h} {p_h})`
 
     The output is same type as the type of the inputs.
-    The encoding formulas are used in works such as R-CNN [1].
+    The encoding formulas are used in works such as R-CNN [#]_.
 
-    .. [1] Ross Girshick, Jeff Donahue, Trevor Darrell, Jitendra Malik. \
+    .. [#] Ross Girshick, Jeff Donahue, Trevor Darrell, Jitendra Malik. \
     Rich feature hierarchies for accurate object detection and semantic \
     segmentation. CVPR 2014.
 
