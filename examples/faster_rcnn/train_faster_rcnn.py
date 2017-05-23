@@ -83,8 +83,8 @@ def main():
         train_data = MergeDataset([voc07, voc12])
 
     faster_rcnn = FasterRCNNVGG16(n_fg_class=len(labels),
-                                  pretrained_model='imagenet',
-                                  score_thresh=0.05)
+                                  pretrained_model='imagenet')
+    faster_rcnn.use_preset('evaluate')
     model = FasterRCNNLoss(faster_rcnn)
     if gpu >= 0:
         model.to_gpu(gpu)
