@@ -17,7 +17,7 @@ from chainercv import transforms
 from chainercv.links import FasterRCNNLoss
 from chainercv.links import FasterRCNNVGG16
 
-from chainercv.datasets.pascal_voc.voc_utils import pascal_voc_labels
+from chainercv.datasets import voc_detection_label_names
 
 from merge_dataset import MergeDataset
 
@@ -75,10 +75,10 @@ def main():
 
     if args.dataset == 'voc07':
         # size 5011
-        labels = pascal_voc_labels
+        labels = voc_detection_label_names
         train_data = VOCDetectionDataset(mode='trainval', year='2007')
     elif args.dataset == 'voc07+voc12':
-        labels = pascal_voc_labels
+        labels = voc_detection_label_names
         voc07 = VOCDetectionDataset(mode='trainval', year='2007')
         voc12 = VOCDetectionDataset(mode='trainval', year='2012')
         train_data = MergeDataset([voc07, voc12])

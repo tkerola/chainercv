@@ -5,7 +5,7 @@ import numpy as np
 from chainer import cuda
 from chainer import serializers
 
-from chainercv.datasets.pascal_voc import voc_utils
+from chainercv.datasets import voc_detection_label_names 
 from chainercv.links import FasterRCNNVGG16
 from chainercv import utils
 from chainercv.visualizations import vis_bbox
@@ -50,7 +50,7 @@ def main():
 
     metric = eval_detection_voc(
         pred_bboxes, pred_labels, pred_scores, gt_bboxes,
-        gt_labels, n_class=len(voc_utils.pascal_voc_labels),
+        gt_labels, n_class=len(voc_detection_label_names),
         gt_difficults=gt_difficults,
         min_iou=0.5, use_07_metric=True)
     print metric
