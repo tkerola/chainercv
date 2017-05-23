@@ -154,8 +154,7 @@ class AnchorTargetCreator(object):
         argmax_ious = ious.argmax(axis=1)
         max_ious = ious[np.arange(len(inside_index)), argmax_ious]
         gt_argmax_ious = ious.argmax(axis=0)
-        gt_max_ious = ious[gt_argmax_ious,
-                                   np.arange(ious.shape[1])]
+        gt_max_ious = ious[gt_argmax_ious, np.arange(ious.shape[1])]
         gt_argmax_ious = np.where(ious == gt_max_ious)[0]
 
         return argmax_ious, max_ious, gt_argmax_ious

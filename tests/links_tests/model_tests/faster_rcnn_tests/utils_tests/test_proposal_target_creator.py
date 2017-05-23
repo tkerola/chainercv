@@ -23,7 +23,7 @@ def _generate_bbox(n, img_size, min_length, max_length):
 class TestProposalTargetCreator(unittest.TestCase):
 
     batch_size = 128
-    n_fg_class = 21
+    n_class = 21
     fg_fraction = 0.25
     loc_inside_weight = (0.7, 0.8, 0.9, 1.)
 
@@ -34,10 +34,10 @@ class TestProposalTargetCreator(unittest.TestCase):
         self.roi = _generate_bbox(n_roi, (392, 512), 16, 250)
         self.bbox = _generate_bbox(n_bbox, (392, 512), 16, 250)
         self.label = np.random.randint(
-            0, self.n_fg_class + 1, size=(n_bbox,), dtype=np.int32)
+            0, self.n_class, size=(n_bbox,), dtype=np.int32)
 
         self.proposal_target_creator = ProposalTargetCreator(
-            n_fg_class=self.n_fg_class,
+            n_class=self.n_class,
             batch_size=self.batch_size,
             fg_fraction=self.fg_fraction,
             loc_inside_weight=self.loc_inside_weight,
@@ -67,13 +67,13 @@ class TestProposalTargetCreator(unittest.TestCase):
         self.assertEqual(sample_roi.shape,
                          (self.batch_size, 4))
         self.assertEqual(roi_bbox_target.shape,
-                         (self.batch_size, 4 * (self.n_fg_class + 1)))
+                         (self.batch_size, 4 * self.n_class))
         self.assertEqual(roi_gt_label.shape,
                          (self.batch_size,))
         self.assertEqual(roi_loc_inside_weight.shape,
-                         (self.batch_size, 4 * (self.n_fg_class + 1)))
+                         (self.batch_size, 4 * self.n_class))
         self.assertEqual(roi_bbox_outside_weight.shape,
-                         (self.batch_size, 4 * (self.n_fg_class + 1)))
+                         (self.batch_size, 4 * self.n_class))
 
         # Test foreground and background labels
         np.testing.assert_equal(

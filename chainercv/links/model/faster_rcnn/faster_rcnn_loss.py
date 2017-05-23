@@ -24,11 +24,10 @@ class FasterRCNNLoss(chainer.Chain):
         super(FasterRCNNLoss, self).__init__(faster_rcnn=faster_rcnn)
         self.rpn_sigma = rpn_sigma
         self.sigma = sigma
-        self.n_fg_class = faster_rcnn.n_fg_class
 
         # These parameters need to be consistent across modules
         proposal_target_creator_params.update({
-            'n_fg_class': self.n_fg_class,
+            'n_class': faster_rcnn.n_class,
             'loc_normalize_mean': self.faster_rcnn.loc_normalize_mean,
             'loc_normalize_std': self.faster_rcnn.loc_normalize_std,
         })

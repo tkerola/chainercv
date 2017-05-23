@@ -18,7 +18,7 @@ class ProposalTargetCreator(object):
     Region Proposal Networks. NIPS 2015.
 
     Args:
-        n_fg_class (int): Number of classes to categorize.
+        n_class (int): Number of classes possibly including the background.
         batch_size (int): Number of regions to produce.
         loc_normalize_mean (tuple of four floats): Mean values to normalize
             coordinates of bouding boxes.
@@ -34,7 +34,7 @@ class ProposalTargetCreator(object):
 
     """
 
-    def __init__(self, n_fg_class,
+    def __init__(self, n_class,
                  batch_size=128,
                  loc_normalize_mean=(0., 0., 0., 0.),
                  loc_normalize_std=(0.1, 0.1, 0.2, 0.2),
@@ -42,7 +42,7 @@ class ProposalTargetCreator(object):
                  fg_fraction=0.25,
                  fg_thresh=0.5, bg_thresh_hi=0.5, bg_thresh_lo=0.0
                  ):
-        self.n_fg_class = n_fg_class
+        self.n_class = n_class
         self.batch_size = batch_size
         self.fg_fraction = fg_fraction
         self.loc_inside_weight = loc_inside_weight
@@ -122,7 +122,7 @@ class ProposalTargetCreator(object):
         # Convert loc (R, 4) and cls (R,) to obtain cls_loc (R, L * 4)
         gt_roi_cls_loc, roi_loc_inside_weight =\
             self._get_bbox_regression_label(
-                gt_roi_loc, gt_roi_label, self.n_fg_class)
+                gt_roi_loc, gt_roi_label, self.n_class)
 
         roi_loc_outside_weight = (roi_loc_inside_weight > 0).astype(np.float32)
 
@@ -170,13 +170,13 @@ class ProposalTargetCreator(object):
                        ) / np.array(self.loc_normalize_std))
         return sample_roi, gt_roi_loc, gt_roi_label
 
-    def _get_bbox_regression_label(self, loc, label, n_fg_class):
+    def _get_bbox_regression_label(self, loc, label, n_class):
         # From loc (R, 4) and label (R,), this function computes
         # cls_loc (R, L * 4).
         # Only one class has non-zero targets in this representation.
 
         n_bbox = label.shape[0]
-        cls_loc = np.zeros((n_bbox, 4 * (n_fg_class + 1)), dtype=np.float32)
+        cls_loc = np.zeros((n_bbox, 4 * n_class), dtype=np.float32)
         loc_inside_weight = np.zeros_like(cls_loc)
         index = np.where(label > 0)[0]
         for ind in index:
