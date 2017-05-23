@@ -4,7 +4,7 @@ import chainer
 from chainer import cuda
 
 from chainercv.links.model.faster_rcnn.utils.bbox2loc import bbox2loc
-from chainercv.utils.bbox.bbox_overlap import bbox_overlap
+from chainercv.utils.bbox.bbox_iou import bbox_iou
 
 
 class AnchorTargetCreator(object):
@@ -12,7 +12,7 @@ class AnchorTargetCreator(object):
     """Assign anchors to ground-truth targets.
 
     Assigns anchors to ground-truth targets to train Region Proposal Networks
-    introduced in Faster RCNN [1].
+    introduced in Faster R-CNN [1].
 
     Bounding regression targets are computed using encoding scheme
     found in :obj:`chainercv.links.bbox2loc`.
@@ -23,9 +23,9 @@ class AnchorTargetCreator(object):
 
     Args:
         n_sample (int): Number of regions to produce.
-        negative_overlap (float): Anchors with overlap below this
+        negative_iou (float): Anchors with IoU below this
             threshold will be assigned as negative.
-        positive_overlap (float): Anchors with overlap above this
+        positive_iou (float): Anchors with IoU above this
             threshold will be assigned as positive.
         fg_fraction (float): Fraction of positive regions in the
             set of all regions produced.
@@ -36,12 +36,12 @@ class AnchorTargetCreator(object):
 
     def __init__(self,
                  n_sample=256,
-                 negative_overlap=0.3, positive_overlap=0.7,
+                 negative_iou=0.3, positive_iou=0.7,
                  fg_fraction=0.5,
                  bbox_in_weight=(1., 1., 1., 1.)):
         self.n_sample = n_sample
-        self.negative_overlap = negative_overlap
-        self.positive_overlap = positive_overlap
+        self.negative_iou = negative_iou
+        self.positive_iou = positive_iou
         self.fg_fraction = fg_fraction
         self.bbox_in_weight = bbox_in_weight
 
@@ -72,9 +72,9 @@ class AnchorTargetCreator(object):
                 :obj:`(1=foreground, 0=background, -1=ignore)`. Its shape \
                 is :math:`(S,)`.
             * **bbox_in_weight**: Inside weight used to compute losses \
-                for Faster RCNN. Its shape is :math:`(S, 4)`.
+                for Faster R-CNN. Its shape is :math:`(S, 4)`.
             * **bbox_out_weight** Outside weight used to compute losses \
-                for Faster RCNN. Its shape is :math:`(S, 4)`.
+                for Faster R-CNN. Its shape is :math:`(S, 4)`.
 
         """
         xp = cuda.get_array_module(bbox)
@@ -86,11 +86,11 @@ class AnchorTargetCreator(object):
         n_anchor = len(anchor)
         inside_index = _get_inside_index(anchor, img_W, img_H)
         anchor = anchor[inside_index]
-        argmax_overlaps, label = self._create_label(
+        argmax_ious, label = self._create_label(
             inside_index, anchor, bbox)
 
         # compute bounding box regression targets
-        loc = bbox2loc(anchor, bbox[argmax_overlaps])
+        loc = bbox2loc(anchor, bbox[argmax_ious])
 
         # calculate inside and outside weights weights
         bbox_in_weight = np.zeros((len(inside_index), 4), dtype=np.float32)
@@ -118,17 +118,17 @@ class AnchorTargetCreator(object):
         label = np.empty((len(inside_index), ), dtype=np.int32)
         label.fill(-1)
 
-        argmax_overlaps, max_overlaps, gt_argmax_overlaps = \
-            self._calc_overlaps(anchor, bbox, inside_index)
+        argmax_ious, max_ious, gt_argmax_ious = \
+            self._calc_ious(anchor, bbox, inside_index)
 
         # assign bg labels first so that positive labels can clobber them
-        label[max_overlaps < self.negative_overlap] = 0
+        label[max_ious < self.negative_iou] = 0
 
-        # fg label: for each gt, anchor with highest overlap
-        label[gt_argmax_overlaps] = 1
+        # fg label: for each gt, anchor with highest iou
+        label[gt_argmax_ious] = 1
 
         # fg label: above threshold IOU
-        label[max_overlaps >= self.positive_overlap] = 1
+        label[max_ious >= self.positive_iou] = 1
 
         # subsample positive labels if we have too many
         num_fg = int(self.fg_fraction * self.n_sample)
@@ -146,20 +146,19 @@ class AnchorTargetCreator(object):
                 bg_index, size=(len(bg_index) - num_bg), replace=False)
             label[disable_index] = -1
 
-        return argmax_overlaps, label
+        return argmax_ious, label
 
-    def _calc_overlaps(self, anchor, bbox, inside_index):
-        # overlaps between the anchors and the gt boxes
-        # overlaps (ex, gt)
-        overlaps = bbox_overlap(anchor, bbox)
-        argmax_overlaps = overlaps.argmax(axis=1)
-        max_overlaps = overlaps[np.arange(len(inside_index)), argmax_overlaps]
-        gt_argmax_overlaps = overlaps.argmax(axis=0)
-        gt_max_overlaps = overlaps[gt_argmax_overlaps,
-                                   np.arange(overlaps.shape[1])]
-        gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
+    def _calc_ious(self, anchor, bbox, inside_index):
+        # ious between the anchors and the gt boxes
+        ious = bbox_iou(anchor, bbox)
+        argmax_ious = ious.argmax(axis=1)
+        max_ious = ious[np.arange(len(inside_index)), argmax_ious]
+        gt_argmax_ious = ious.argmax(axis=0)
+        gt_max_ious = ious[gt_argmax_ious,
+                                   np.arange(ious.shape[1])]
+        gt_argmax_ious = np.where(ious == gt_max_ious)[0]
 
-        return argmax_overlaps, max_overlaps, gt_argmax_overlaps
+        return argmax_ious, max_ious, gt_argmax_ious
 
     def _calc_outside_weights(self, inside_index, label):
         bbox_out_weight = np.zeros(

@@ -3,7 +3,7 @@ import numpy as np
 from chainer import cuda
 
 from chainercv.links.model.faster_rcnn.utils.bbox2loc import bbox2loc
-from chainercv.utils.bbox.bbox_overlap import bbox_overlap
+from chainercv.utils.bbox.bbox_iou import bbox_iou
 
 
 class ProposalTargetCreator(object):
@@ -26,9 +26,9 @@ class ProposalTargetCreator(object):
             the coordinates of bounding boxes.
         loc_inside_weight (tuple of four floats):
         fg_fraction (float): Fraction of regions that is labeled foreground.
-        fg_thresh (float): Overlap threshold for a ROI to be considered
+        fg_thresh (float): IoU threshold for a ROI to be considered
             foreground.
-        bg_thresh_hi (float): ROI is considered to be background if overlap is
+        bg_thresh_hi (float): ROI is considered to be background if IoU is
             in [:obj:`bg_thresh_hi`, :obj:`bg_thresh_hi`).
         bg_thresh_lo (float): See :obj:`bg_thresh_hi`.
 
@@ -137,21 +137,21 @@ class ProposalTargetCreator(object):
 
     def _sample_roi(self, roi, bbox, label):
         fg_roi_per_image = np.round(self.batch_size * self.fg_fraction)
-        overlap = bbox_overlap(roi, bbox)
-        gt_assignment = overlap.argmax(axis=1)
-        max_overlap = overlap.max(axis=1)
+        iou = bbox_iou(roi, bbox)
+        gt_assignment = iou.argmax(axis=1)
+        max_iou = iou.max(axis=1)
         gt_roi_label = label[gt_assignment]
 
-        # Select foreground RoIs as those with >= FG_THRESH overlap.
-        fg_index = np.where(max_overlap >= self.fg_thresh)[0]
+        # Select foreground RoIs as those with >= FG_THRESH IoU.
+        fg_index = np.where(max_iou >= self.fg_thresh)[0]
         fg_roi_per_this_image = int(min(fg_roi_per_image, fg_index.size))
         if fg_index.size > 0:
             fg_index = np.random.choice(
                 fg_index, size=fg_roi_per_this_image, replace=False)
 
         # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI).
-        bg_index = np.where((max_overlap < self.bg_thresh_hi) &
-                            (max_overlap >= self.bg_thresh_lo))[0]
+        bg_index = np.where((max_iou < self.bg_thresh_hi) &
+                            (max_iou >= self.bg_thresh_lo))[0]
         bg_roi_per_this_image = self.batch_size - fg_roi_per_this_image
         bg_roi_per_this_image = int(min(bg_roi_per_this_image, bg_index.size))
         if bg_index.size > 0:
