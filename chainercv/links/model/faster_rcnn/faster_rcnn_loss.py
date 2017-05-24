@@ -4,7 +4,6 @@ import chainer
 from chainer import cuda
 import chainer.functions as F
 
-from chainercv.functions.smooth_l1_loss import smooth_l1_loss
 from chainercv.links.model.faster_rcnn.utils.anchor_target_creator import \
     AnchorTargetCreator
 from chainercv.links.model.faster_rcnn.utils.proposal_target_creator import \
@@ -39,6 +38,11 @@ class FasterRCNNLoss(chainer.Chain):
         self.train = True
 
     def __call__(self, imgs, bboxes, labels, scale):
+        """Forward loss for Faster R-CNN.
+
+        Args:
+            imgs (chainer.Variable): 
+        """
         if isinstance(bboxes, chainer.Variable):
             bboxes = bboxes.data
         if isinstance(labels, chainer.Variable):
@@ -75,16 +79,15 @@ class FasterRCNNLoss(chainer.Chain):
             self.anchor_target_creator(bbox, anchor, img_size)
 
         rpn_cls_loss = F.softmax_cross_entropy(rpn_score, gt_rpn_label)
-        rpn_loc_loss = smooth_l1_loss(
+        rpn_loc_loss = _smooth_l1_loss(
             rpn_loc, gt_rpn_loc,
             rpn_loc_in_weight, rpn_loc_out_weight, self.rpn_sigma)
 
         # Losses for outputs of the head.
         cls_loss = F.softmax_cross_entropy(roi_score, gt_roi_label)
-        loc_loss = smooth_l1_loss(
+        loc_loss = _smooth_l1_loss(
             roi_cls_loc, gt_roi_cls_loc,
             roi_loc_in_weight, roi_loc_out_weight, self.sigma)
-        loc_loss /= roi_cls_loc.shape[0]
 
         loss = rpn_loc_loss + rpn_cls_loss + loc_loss + cls_loss
         chainer.reporter.report({'rpn_loc_loss': rpn_loc_loss,
@@ -94,3 +97,17 @@ class FasterRCNNLoss(chainer.Chain):
                                  'loss': loss},
                                 self)
         return loss
+
+
+def _smooth_l1_loss(x, t, inside_weights, outside_weights, sigma):
+    sigma2 = sigma ** 2
+    diff = inside_weights * (x - t)
+    abs_diff = F.absolute(diff)
+    flag = (abs_diff.data < (1. / sigma2)).astype(np.float32)
+
+    y = (flag * (sigma2 / 2.) * F.square(diff) +
+         (1 - flag) * (abs_diff - 0.5 / sigma2))
+
+    y = y * outside_weights
+    y /= y.shape[0]
+    return F.sum(y)
