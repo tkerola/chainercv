@@ -131,15 +131,15 @@ class FasterRCNNLoss(chainer.Chain):
         return loss
 
 
-def _smooth_l1_loss(x, t, inside_weights, outside_weights, sigma):
+def _smooth_l1_loss(x, t, in_weight, out_weight, sigma):
     sigma2 = sigma ** 2
-    diff = inside_weights * (x - t)
+    diff = in_weight * (x - t)
     abs_diff = F.absolute(diff)
     flag = (abs_diff.data < (1. / sigma2)).astype(np.float32)
 
     y = (flag * (sigma2 / 2.) * F.square(diff) +
          (1 - flag) * (abs_diff - 0.5 / sigma2))
 
-    y = y * outside_weights
+    y = y * out_weight
     y /= y.shape[0]
     return F.sum(y)
