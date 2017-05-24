@@ -9,15 +9,15 @@ from chainercv.utils.bbox.bbox_iou import bbox_iou
 
 class AnchorTargetCreator(object):
 
-    """Assign anchors to ground-truth targets.
+    """Assign anchors to the ground-truth targets.
 
     Assigns anchors to ground-truth targets to train Region Proposal Networks
-    introduced in Faster R-CNN [1].
+    introduced in Faster R-CNN [#]_.
 
     Bounding regression targets are computed using encoding scheme
-    found in :obj:`chainercv.links.bbox2loc`.
+    found in :obj:`chainercv.links.model.faster_rcnn.bbox2loc`.
 
-    .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
+    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
 

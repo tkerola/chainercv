@@ -11,9 +11,9 @@ class ProposalTargetCreator(object):
 
     The :meth:`__call__` of this class generates training targets/labels
     for each object proposal.
-    This is used to train Faster RCNN [1].
+    This is used to train Faster RCNN [#]_.
 
-    .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
+    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
 
@@ -66,14 +66,15 @@ class ProposalTargetCreator(object):
         of bounding boxes which are ordered by
         :obj:`(x_min, y_min, x_max, y_max)`.
         Offsets of bounding boxes are calculated using
-        :func:`chainercv.links.bbox2loc`.
+        :func:`chainercv.links.model.faster_rcnn.bbox2loc`.
         Also, types of inputs and outputs are same.
 
         Here are notations.
 
         * :math:`S` is the total number of sampled RoIs, which equals \
             :obj:`self.batch_size`.
-        * :math:`K` is number of object classes.
+        * :math:`K` is number of object classes possibly including the \
+            background.
 
         Args:
             roi (array): Region of interests from which we sample.
