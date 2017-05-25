@@ -9,41 +9,41 @@ from chainercv.utils.bbox.bbox_iou import bbox_iou
 
 class AnchorTargetCreator(object):
 
-    """Assign anchors to ground-truth targets.
+    """Assign anchors to the ground-truth targets.
 
     Assigns anchors to ground-truth targets to train Region Proposal Networks
-    introduced in Faster R-CNN [1].
+    introduced in Faster R-CNN [#]_.
 
     Bounding regression targets are computed using encoding scheme
-    found in :obj:`chainercv.links.bbox2loc`.
+    found in :obj:`chainercv.links.model.faster_rcnn.bbox2loc`.
 
-    .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
+    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
 
     Args:
         n_sample (int): Number of regions to produce.
-        negative_iou (float): Anchors with IoU below this
-            threshold will be assigned as negative.
         positive_iou (float): Anchors with IoU above this
             threshold will be assigned as positive.
+        negative_iou (float): Anchors with IoU below this
+            threshold will be assigned as negative.
         fg_fraction (float): Fraction of positive regions in the
             set of all regions produced.
-        bbox_in_weight (tuple of four floats): Four coefficients
-            used to calculate bbox_in_weight.
+        loc_in_weight (tuple of four floats): Four coefficients
+            used to calculate loc_in_weight.
 
     """
 
     def __init__(self,
                  n_sample=256,
-                 negative_iou=0.3, positive_iou=0.7,
+                 positive_iou=0.7, negative_iou=0.3,
                  fg_fraction=0.5,
-                 bbox_in_weight=(1., 1., 1., 1.)):
+                 loc_in_weight=(1., 1., 1., 1.)):
         self.n_sample = n_sample
-        self.negative_iou = negative_iou
         self.positive_iou = positive_iou
+        self.negative_iou = negative_iou
         self.fg_fraction = fg_fraction
-        self.bbox_in_weight = bbox_in_weight
+        self.loc_in_weight = loc_in_weight
 
     def __call__(self, bbox, anchor, img_size):
         """Calculate targets of classification labels and bbox regressions.
@@ -71,9 +71,9 @@ class AnchorTargetCreator(object):
             * **label**: Labels of bounding boxes with values \
                 :obj:`(1=foreground, 0=background, -1=ignore)`. Its shape \
                 is :math:`(S,)`.
-            * **bbox_in_weight**: Inside weight used to compute losses \
+            * **loc_in_weight**: Inside weight used to compute losses \
                 for Faster R-CNN. Its shape is :math:`(S, 4)`.
-            * **bbox_out_weight** Outside weight used to compute losses \
+            * **loc_out_weight** Outside weight used to compute losses \
                 for Faster R-CNN. Its shape is :math:`(S, 4)`.
 
         """
@@ -93,25 +93,25 @@ class AnchorTargetCreator(object):
         loc = bbox2loc(anchor, bbox[argmax_ious])
 
         # calculate inside and outside weights weights
-        bbox_in_weight = np.zeros((len(inside_index), 4), dtype=np.float32)
-        bbox_in_weight[label == 1, :] = np.array(
-            self.bbox_in_weight)
-        bbox_out_weight = self._calc_outside_weights(inside_index, label)
+        loc_in_weight = np.zeros((len(inside_index), 4), dtype=np.float32)
+        loc_in_weight[label == 1, :] = np.array(
+            self.loc_in_weight)
+        loc_out_weight = self._calc_outside_weights(inside_index, label)
 
         # map up to original set of anchors
         label = _unmap(label, n_anchor, inside_index, fill=-1)
         loc = _unmap(loc, n_anchor, inside_index, fill=0)
-        bbox_in_weight = _unmap(
-            bbox_in_weight, n_anchor, inside_index, fill=0)
-        bbox_out_weight = _unmap(
-            bbox_out_weight, n_anchor, inside_index, fill=0)
+        loc_in_weight = _unmap(
+            loc_in_weight, n_anchor, inside_index, fill=0)
+        loc_out_weight = _unmap(
+            loc_out_weight, n_anchor, inside_index, fill=0)
 
         if xp != np:
             loc = chainer.cuda.to_gpu(loc)
             label = chainer.cuda.to_gpu(label)
-            bbox_in_weight = chainer.cuda.to_gpu(bbox_in_weight)
-            bbox_out_weight = chainer.cuda.to_gpu(bbox_out_weight)
-        return loc, label, bbox_in_weight, bbox_out_weight
+            loc_in_weight = chainer.cuda.to_gpu(loc_in_weight)
+            loc_out_weight = chainer.cuda.to_gpu(loc_out_weight)
+        return loc, label, loc_in_weight, loc_out_weight
 
     def _create_label(self, inside_index, anchor, bbox):
         # label: 1 is positive, 0 is negative, -1 is dont care
@@ -160,7 +160,7 @@ class AnchorTargetCreator(object):
         return argmax_ious, max_ious, gt_argmax_ious
 
     def _calc_outside_weights(self, inside_index, label):
-        bbox_out_weight = np.zeros(
+        loc_out_weight = np.zeros(
             (len(inside_index), 4), dtype=np.float32)
         # uniform weighting of examples (given non-uniform sampling)
         n_example = np.sum(label >= 0)
@@ -168,10 +168,10 @@ class AnchorTargetCreator(object):
         positive_weight = np.ones((1, 4)) * 1.0 / n_example
         negative_weight = np.ones((1, 4)) * 1.0 / n_example
 
-        bbox_out_weight[label == 1, :] = positive_weight
-        bbox_out_weight[label == 0, :] = negative_weight
+        loc_out_weight[label == 1, :] = positive_weight
+        loc_out_weight[label == 0, :] = negative_weight
 
-        return bbox_out_weight
+        return loc_out_weight
 
 
 def _unmap(data, count, index, fill=0):

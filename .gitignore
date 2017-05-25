@@ -19,4 +19,3 @@ examples/image_retrieval/triplet/result/
 examples/image_classification/tensorboard/result/
 
 tests/bin/
-result

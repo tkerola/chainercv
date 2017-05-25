@@ -4,7 +4,6 @@ import chainer
 from chainer import cuda
 import chainer.functions as F
 
-from chainercv.functions.smooth_l1_loss import smooth_l1_loss
 from chainercv.links.model.faster_rcnn.utils.anchor_target_creator import \
     AnchorTargetCreator
 from chainercv.links.model.faster_rcnn.utils.proposal_target_creator import \
@@ -13,7 +12,21 @@ from chainercv.links.model.faster_rcnn.utils.proposal_target_creator import \
 
 class FasterRCNNLoss(chainer.Chain):
 
-    """Loss for Faster RCNN.
+    """Loss for Faster R-CNN.
+
+    This is used to train Faster R-CNN in the joint training scheme.
+
+    Args:
+        faster_rcnn (~chainercv.links.model.faster_rcnn.FasterRCNN):
+            A Faster R-CNN model to train.
+        rpn_sigma (float): Sigma parameter for localization loss
+            of RPN.
+        sigma (float): Sigma paramter for localization loss of
+            calculated from the output of the head.
+        anchor_target_creator_params (dict): Key valued paramters for
+            :obj:`chainercv.links.model.faster_rcnn.AnchorTargetCreator`.
+        proposal_target_creator_params (dict): Key valued paramters for
+            :obj:`chainercv.links.model.faster_rcnn.ProposalTargetCreator`.
 
     """
 
@@ -39,6 +52,29 @@ class FasterRCNNLoss(chainer.Chain):
         self.train = True
 
     def __call__(self, imgs, bboxes, labels, scale):
+        """Forward Faster R-CNN and calculate losses.
+
+        Here are notations used.
+
+        * :math:`N` is the number of batch size.
+        * :math:`R` is the number of bounding boxes per image.
+
+        Args:
+            imgs (~chainer.Variable): 4D image variable.
+            bboxes (~chainer.Variable): Batched bounding boxes.
+                Its shape is :math:`(N, R, 4)`.
+            labels (~chainer.Variable): Batched labels.
+                Its shape is :math:`(N, R)`.
+            scale (float): Amount of scaling applied to the raw image
+                during preprocessing.
+
+        Returns:
+            chainer.Variable:
+            Loss scalar variable.
+            This is a sum of losses for Region Proposal Network and
+            the head module.
+
+        """
         if isinstance(bboxes, chainer.Variable):
             bboxes = bboxes.data
         if isinstance(labels, chainer.Variable):
@@ -75,16 +111,15 @@ class FasterRCNNLoss(chainer.Chain):
             self.anchor_target_creator(bbox, anchor, img_size)
 
         rpn_cls_loss = F.softmax_cross_entropy(rpn_score, gt_rpn_label)
-        rpn_loc_loss = smooth_l1_loss(
+        rpn_loc_loss = _smooth_l1_loss(
             rpn_loc, gt_rpn_loc,
             rpn_loc_in_weight, rpn_loc_out_weight, self.rpn_sigma)
 
         # Losses for outputs of the head.
         cls_loss = F.softmax_cross_entropy(roi_score, gt_roi_label)
-        loc_loss = smooth_l1_loss(
+        loc_loss = _smooth_l1_loss(
             roi_cls_loc, gt_roi_cls_loc,
             roi_loc_in_weight, roi_loc_out_weight, self.sigma)
-        loc_loss /= roi_cls_loc.shape[0]
 
         loss = rpn_loc_loss + rpn_cls_loss + loc_loss + cls_loss
         chainer.reporter.report({'rpn_loc_loss': rpn_loc_loss,
@@ -94,3 +129,17 @@ class FasterRCNNLoss(chainer.Chain):
                                  'loss': loss},
                                 self)
         return loss
+
+
+def _smooth_l1_loss(x, t, in_weight, out_weight, sigma):
+    sigma2 = sigma ** 2
+    diff = in_weight * (x - t)
+    abs_diff = F.absolute(diff)
+    flag = (abs_diff.data < (1. / sigma2)).astype(np.float32)
+
+    y = (flag * (sigma2 / 2.) * F.square(diff) +
+         (1 - flag) * (abs_diff - 0.5 / sigma2))
+
+    y = y * out_weight
+    y /= y.shape[0]
+    return F.sum(y)

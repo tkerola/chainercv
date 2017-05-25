@@ -11,9 +11,9 @@ class ProposalTargetCreator(object):
 
     The :meth:`__call__` of this class generates training targets/labels
     for each object proposal.
-    This is used to train Faster RCNN [1].
+    This is used to train Faster RCNN [#]_.
 
-    .. [1] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
+    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
 
@@ -24,13 +24,14 @@ class ProposalTargetCreator(object):
             coordinates of bouding boxes.
         loc_normalize_std (tupler of four floats): Standard deviation of
             the coordinates of bounding boxes.
-        loc_inside_weight (tuple of four floats):
+        loc_in_weight (tuple of four floats): Weights applied to
+            :obj:`loc` used by Faster R-CNN.
         fg_fraction (float): Fraction of regions that is labeled foreground.
         fg_thresh (float): IoU threshold for a ROI to be considered
             foreground.
         bg_thresh_hi (float): ROI is considered to be background if IoU is
             in [:obj:`bg_thresh_hi`, :obj:`bg_thresh_hi`).
-        bg_thresh_lo (float): See :obj:`bg_thresh_hi`.
+        bg_thresh_lo (float): See above.
 
     """
 
@@ -38,14 +39,14 @@ class ProposalTargetCreator(object):
                  batch_size=128,
                  loc_normalize_mean=(0., 0., 0., 0.),
                  loc_normalize_std=(0.1, 0.1, 0.2, 0.2),
-                 loc_inside_weight=(1., 1., 1., 1.),
+                 loc_in_weight=(1., 1., 1., 1.),
                  fg_fraction=0.25,
                  fg_thresh=0.5, bg_thresh_hi=0.5, bg_thresh_lo=0.0
                  ):
         self.n_class = n_class
         self.batch_size = batch_size
         self.fg_fraction = fg_fraction
-        self.loc_inside_weight = loc_inside_weight
+        self.loc_in_weight = loc_in_weight
         self.loc_normalize_mean = loc_normalize_mean
         self.loc_normalize_std = loc_normalize_std
         self.fg_thresh = fg_thresh
@@ -66,14 +67,15 @@ class ProposalTargetCreator(object):
         of bounding boxes which are ordered by
         :obj:`(x_min, y_min, x_max, y_max)`.
         Offsets of bounding boxes are calculated using
-        :func:`chainercv.links.bbox2loc`.
+        :func:`chainercv.links.model.faster_rcnn.bbox2loc`.
         Also, types of inputs and outputs are same.
 
         Here are notations.
 
         * :math:`S` is the total number of sampled RoIs, which equals \
             :obj:`self.batch_size`.
-        * :math:`K` is number of object classes.
+        * :math:`L` is number of object classes possibly including the \
+            background.
 
         Args:
             roi (array): Region of interests from which we sample.
@@ -90,20 +92,20 @@ class ProposalTargetCreator(object):
                 Its shape is :math:`(S, 4)`.
             * **gt_roi_cls_loc**: Ground truth offsets and scales to match \
                 the sampled RoIs to the ground truth bounding boxes. \
-                Its shape is :math:`(S, K \\times 4)`. The last \
+                Its shape is :math:`(S, L \\times 4)`. The last \
                 axis represents bounding box offsets for each of the \
-                :math:`K` classes. The coordinates for the same class is \
+                :math:`L` classes. The coordinates for the same class is \
                 contiguous in this array.
             * **gt_roi_label**: Labels sampled for training. Its shape is \
                 :math:`(S,)`.
-            * **roi_loc_inside_weight**: Inside weights used to \
+            * **roi_loc_in_weight**: Inside weights used to \
                 compute losses for Faster RCNN. Its shape is \
-                :math:`(S, K \\times 4)`. The second axis is organized \
-                similarly to :obj:`roi_bbox_target`.
-            * **roi_loc_outside_weight**: Outside weights used to compute \
+                :math:`(S, L \\times 4)`. The second axis is organized \
+                similarly to :obj:`gt_roi_cls_loc`.
+            * **roi_loc_out_weight**: Outside weights used to compute \
                 losses for Faster RCNN. Its shape is \
-                :math:`(S, K \\times 4)`. The second axis is organized \
-                similarly to :obj:`roi_bbox_target`.
+                :math:`(S, L \\times 4)`. The second axis is organized \
+                similarly to :obj:`gt_roi_cls_loc`.
 
         """
         xp = cuda.get_array_module(roi)
@@ -120,20 +122,20 @@ class ProposalTargetCreator(object):
             roi, bbox, label)
 
         # Convert loc (R, 4) and cls (R,) to obtain cls_loc (R, L * 4)
-        gt_roi_cls_loc, roi_loc_inside_weight =\
+        gt_roi_cls_loc, roi_loc_in_weight =\
             self._get_bbox_regression_label(
                 gt_roi_loc, gt_roi_label, self.n_class)
 
-        roi_loc_outside_weight = (roi_loc_inside_weight > 0).astype(np.float32)
+        roi_loc_out_weight = (roi_loc_in_weight > 0).astype(np.float32)
 
         if xp != np:
             sample_roi = cuda.to_gpu(sample_roi)
             gt_roi_cls_loc = cuda.to_gpu(gt_roi_cls_loc)
             gt_roi_label = cuda.to_gpu(gt_roi_label)
-            roi_loc_inside_weight = cuda.to_gpu(roi_loc_inside_weight)
-            roi_loc_outside_weight = cuda.to_gpu(roi_loc_outside_weight)
+            roi_loc_in_weight = cuda.to_gpu(roi_loc_in_weight)
+            roi_loc_out_weight = cuda.to_gpu(roi_loc_out_weight)
         return sample_roi, gt_roi_cls_loc, gt_roi_label,\
-            roi_loc_inside_weight, roi_loc_outside_weight
+            roi_loc_in_weight, roi_loc_out_weight
 
     def _sample_roi(self, roi, bbox, label):
         fg_roi_per_image = np.round(self.batch_size * self.fg_fraction)
@@ -177,12 +179,12 @@ class ProposalTargetCreator(object):
 
         n_bbox = label.shape[0]
         cls_loc = np.zeros((n_bbox, 4 * n_class), dtype=np.float32)
-        loc_inside_weight = np.zeros_like(cls_loc)
+        loc_in_weight = np.zeros_like(cls_loc)
         index = np.where(label > 0)[0]
         for ind in index:
             l = int(label[ind])
             start = int(4 * l)
             end = int(start + 4)
             cls_loc[ind, start:end] = loc[ind]
-            loc_inside_weight[ind, start:end] = self.loc_inside_weight
-        return cls_loc, loc_inside_weight
+            loc_in_weight[ind, start:end] = self.loc_in_weight
+        return cls_loc, loc_in_weight
