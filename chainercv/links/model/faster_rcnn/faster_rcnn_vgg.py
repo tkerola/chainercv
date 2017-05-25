@@ -147,13 +147,17 @@ class FasterRCNNVGG16(FasterRCNN):
                 download_file = download.cached_download(url)
                 os.rename(download_file, dest_fn)
             chainer.serializers.load_npz(dest_fn, self)
-        elif pretrained_model == 'imagenet':
-            self._copy_imagenet_pretrained_vgg16()
+        elif pretrained_model.startswith('imagenet'):
+            if ':' in pretrained_model:
+                __, pretrained_model_imagenet_vgg = pretrained_model.split(':')
+            else:
+                pretrained_model_imagenet_vgg = 'auto'
+            self._copy_imagenet_pretrained_vgg16(pretrained_model_imagenet_vgg)
         elif pretrained_model:
             chainer.serializers.load_npz(pretrained_model, self)
 
-    def _copy_imagenet_pretrained_vgg16(self):
-        pretrained_model = VGG16Layers()
+    def _copy_imagenet_pretrained_vgg16(self, pretrained_model_imagenet_vgg):
+        pretrained_model = VGG16Layers(pretrained_model_imagenet_vgg)
         self.extractor.conv1_1.copyparams(pretrained_model.conv1_1)
         self.extractor.conv1_2.copyparams(pretrained_model.conv1_2)
         self.extractor.conv2_1.copyparams(pretrained_model.conv2_1)
