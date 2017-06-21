@@ -3,8 +3,8 @@ channels:
 - !!python/unicode
   'defaults'
 dependencies:
+  - Cython
   - numpy
-  - pillow
-  - cython
+  - Pillow
   - pip:
-    - chainer
+    - chainer==2.0

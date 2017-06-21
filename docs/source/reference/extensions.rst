@@ -11,10 +11,6 @@ DetectionVisReport
 ~~~~~~~~~~~~~~~~~~
 .. autofunction:: DetectionVisReport
 
-
-Semantic Segmentation
----------------------
-
-SemanticSegmentationVisReport
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-.. autofunction:: SemanticSegmentationVisReport
+DetectionVOCEvaluator
+~~~~~~~~~~~~~~~~~~~~~
+.. autofunction:: DetectionVOCEvaluator
